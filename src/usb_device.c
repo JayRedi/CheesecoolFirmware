@@ -80,6 +80,16 @@ static uint8_t usb_device_state;
 static uint32_t usb_attach_started_ms;
 #endif
 
+#if FEATURE_USB_ENUM_TRACE_V1
+#define USB_ENUM_TRACE_V1_MAGIC 0x31525445UL
+typedef struct {
+    volatile uint32_t magic;
+    volatile uint32_t count;
+    volatile uint32_t entries[64];
+} usb_enum_trace_v1_t;
+#define USB_ENUM_TRACE_V1 ((usb_enum_trace_v1_t *)0x20000200UL)
+#endif
+
 #if FEATURE_USB_ATTACH_DIAG || FEATURE_USB_SETUP_DIAG || FEATURE_USB_DEVICE_DESC_DIAG || FEATURE_USB_SET_ADDRESS_DIAG || FEATURE_USB_CONFIG_DIAG || FEATURE_USB_POST_ADDRESS_DIAG || FEATURE_USB_POST_ADDRESS_FIX_DIAG || FEATURE_USB_CONFIG_LENGTH_DIAG || FEATURE_USB_CONFIG_IN_DIAG || FEATURE_USB_CONFIG_RUNTIME_DIAG
 enum {
     ATTACH_DIAG_PREPARE = 0,
@@ -1168,6 +1178,16 @@ void USBFS_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USBFS_IRQHandler(void)
 {
     uint8_t flags=USBFSD->INT_FG, status=USBFSD->INT_ST;
+#if FEATURE_USB_ENUM_TRACE_V1
+    if (USB_ENUM_TRACE_V1->count < 64U) {
+        uint32_t entry=(uint32_t)flags |
+            ((uint32_t)status<<8) |
+            ((uint32_t)USBFSD->DEV_ADDR<<16) |
+            ((uint32_t)usb_configuration<<24);
+        USB_ENUM_TRACE_V1->entries[USB_ENUM_TRACE_V1->count]=entry;
+        USB_ENUM_TRACE_V1->count++;
+    }
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
     usb_trace_log(USB_TRACE_IRQ_ENTRY);
 #endif
@@ -1414,6 +1434,10 @@ void usb_device_init(void)
 #if FEATURE_USB_DEVICE
     configured=false; out_pending=false; tx_busy=false; tx_done=false; dfu_reset_waiting=false; dfu_reset_due_ms=0U; protocol_mode=1; idle_rate=0;
     diag_start_ms=system_millis(); usb_protocol_init();
+#if FEATURE_USB_ENUM_TRACE_V1
+    USB_ENUM_TRACE_V1->magic=USB_ENUM_TRACE_V1_MAGIC;
+    USB_ENUM_TRACE_V1->count=0U;
+#endif
 #if FEATURE_USB_ENUM_TRACE
     usb_detach_begin();
 #elif FEATURE_USB_ATTACH_DIAG || FEATURE_USB_SETUP_DIAG || FEATURE_USB_DEVICE_DESC_DIAG || FEATURE_USB_SET_ADDRESS_DIAG || FEATURE_USB_CONFIG_DIAG || FEATURE_USB_POST_ADDRESS_DIAG || FEATURE_USB_POST_ADDRESS_FIX_DIAG || FEATURE_USB_CONFIG_LENGTH_DIAG || FEATURE_USB_CONFIG_IN_DIAG || FEATURE_USB_CONFIG_RUNTIME_DIAG
