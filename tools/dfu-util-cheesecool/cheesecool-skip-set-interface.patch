@@ -1,0 +1,125 @@
+--- a/src/dfu_util.h	2021-07-05 20:11:49
++++ b/src/dfu_util.h	2026-08-29 23:59:57
+@@ -11,7 +11,8 @@
+ 	MODE_LIST,
+ 	MODE_DETACH,
+ 	MODE_UPLOAD,
+-	MODE_DOWNLOAD
++	MODE_DOWNLOAD,
++	MODE_HOST_ONLY
+ };
+ 
+ extern struct dfu_if *dfu_root;
+--- a/src/main.c	2021-07-05 20:11:49
++++ b/src/main.c	2026-08-30 00:00:25
+@@ -61,7 +61,14 @@
+ const char *match_iface_alt_name = NULL;
+ const char *match_serial = NULL;
+ const char *match_serial_dfu = NULL;
++static int skip_set_interface = 0;
+ 
++static int is_cheesecool_golden_alt0(const struct dfu_if *dif)
++{
++	return dif->vendor == 0x1a86 && dif->product == 0x8035 &&
++	       dif->interface == 0 && dif->altsetting == 0;
++}
++
+ static int parse_match_value(const char *str, int default_value)
+ {
+ 	char *remainder;
+@@ -182,6 +189,8 @@
+ 		"\t\t\t\tSpecify Serial String of DFU device\n"
+ 		"  -a --alt <alt>\t\tSpecify the Altsetting of the DFU Interface\n"
+ 		"\t\t\t\tby name or by number\n");
++	fprintf(stderr, "  --skip-set-interface\t\tSkip SET_INTERFACE(0,0) only for CheeseCool 1a86:8035 interface 0 alt 0\n"
++		"  --host-only\t\t\tOpen, claim, verify target interface, and close without DFU requests\n");
+ 	fprintf(stderr, "  -t --transfer-size <size>\tSpecify the number of bytes per USB Transfer\n"
+ 		"  -U --upload <file>\t\tRead firmware from device into <file>\n"
+ 		"  -Z --upload-size <bytes>\tSpecify the expected upload size in bytes\n"
+@@ -234,6 +243,8 @@
+ 	{ "dfuse-address", 1, 0, 's' },
+ 	{ "devnum",1, 0, 'n' },
+ 	{ "wait", 1, 0, 'w' },
++	{ "skip-set-interface", 0, 0, 1000 },
++	{ "host-only", 0, 0, 1001 },
+ 	{ 0, 0, 0, 0 }
+ };
+ 
+@@ -342,7 +353,14 @@
+ 			break;
+ 		case 'w':
+ 			wait_device = 1;
++			break;
++		case 1000:
++			skip_set_interface = 1;
+ 			break;
++		case 1001:
++			mode = MODE_HOST_ONLY;
++			skip_set_interface = 1;
++			break;
+ 		default:
+ 			help();
+ 			exit(EX_USAGE);
+@@ -455,6 +473,9 @@
+ 		errx(EX_IOERR, "Cannot open device: %s", libusb_error_name(ret));
+ 
+ 	printf("Device ID %04x:%04x\n", dfu_root->vendor, dfu_root->product);
++	if (skip_set_interface && !is_cheesecool_golden_alt0(dfu_root)) {
++		errx(EX_USAGE, "--skip-set-interface is restricted to CheeseCool 1a86:8035 interface 0 alt 0");
++	}
+ 
+ 	/* If first interface is DFU it is likely not proper run-time */
+ 	if (dfu_root->interface > 0)
+@@ -464,6 +485,23 @@
+ 	printf(" DFU version %04x\n",
+ 	       libusb_le16_to_cpu(dfu_root->func_dfu.bcdDFUVersion));
+ 
++	if (mode == MODE_HOST_ONLY) {
++		if (!(dfu_root->flags & DFU_IFF_DFU))
++			errx(EX_PROTOCOL, "--host-only requires a device already in DFU mode");
++		printf("Host-only: claiming USB DFU Interface %d...\n", dfu_root->interface);
++		ret = libusb_claim_interface(dfu_root->dev_handle, dfu_root->interface);
++		if (ret < 0)
++			errx(EX_IOERR, "Cannot claim interface - %s", libusb_error_name(ret));
++		printf("Host-only: interface=%d alt=%d; skipped SET_INTERFACE(0,0)\n",
++		       dfu_root->interface, dfu_root->altsetting);
++		libusb_release_interface(dfu_root->dev_handle, dfu_root->interface);
++		libusb_close(dfu_root->dev_handle);
++		dfu_root->dev_handle = NULL;
++		disconnect_devices();
++		libusb_exit(ctx);
++		return EX_OK;
++	}
++
+ 	if (verbose) {
+ 		printf("DFU attributes: (0x%02x)", dfu_root->func_dfu.bmAttributes);
+ 		if (dfu_root->func_dfu.bmAttributes & USB_DFU_CAN_DOWNLOAD)
+@@ -500,7 +538,8 @@
+ 		 * and should also be safe if there are multiple alt settings.
+ 		 * Otherwise skip the request since it might not be supported
+ 		 * by the device and the USB stack may or may not recover */
+-		if (dfu_root->interface > 0 || dfu_root->flags & DFU_IFF_ALT) {
++		if ((dfu_root->interface > 0 || dfu_root->flags & DFU_IFF_ALT) &&
++		    !(skip_set_interface && is_cheesecool_golden_alt0(dfu_root))) {
+ 			printf("Setting Alternate Interface zero...\n");
+ 			ret = libusb_set_interface_alt_setting(dfu_root->dev_handle, dfu_root->interface, 0);
+ 			if (ret < 0) {
+@@ -620,10 +659,14 @@
+ 	}
+ 
+ 	if (dfu_root->flags & DFU_IFF_ALT) {
+-		printf("Setting Alternate Interface #%d ...\n", dfu_root->altsetting);
+-		ret = libusb_set_interface_alt_setting(dfu_root->dev_handle, dfu_root->interface, dfu_root->altsetting);
+-		if (ret < 0) {
+-			errx(EX_IOERR, "Cannot set alternate interface: %s", libusb_error_name(ret));
++		if (skip_set_interface && is_cheesecool_golden_alt0(dfu_root)) {
++			printf("Skipping SET_INTERFACE(0,0) for CheeseCool workaround\n");
++		} else {
++			printf("Setting Alternate Interface #%d ...\n", dfu_root->altsetting);
++			ret = libusb_set_interface_alt_setting(dfu_root->dev_handle, dfu_root->interface, dfu_root->altsetting);
++			if (ret < 0) {
++				errx(EX_IOERR, "Cannot set alternate interface: %s", libusb_error_name(ret));
++			}
+ 		}
+ 	}
+ 
