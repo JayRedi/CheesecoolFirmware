@@ -1370,7 +1370,7 @@ void USBFS_IRQHandler(void)
 #endif
                     }
                 }
-            } else if (ep==1) { tx_busy=false; tx_done=true; USBFSD->UEP1_CTRL_H=(USBFSD->UEP1_CTRL_H&~USBFS_UEP_T_RES_MASK)|USBFS_UEP_T_RES_NAK; }
+            } else if (ep==1) { tx_busy=false; tx_done=true; USBFSD->UEP1_CTRL_H=(USBFSD->UEP1_CTRL_H&~USBFS_UEP_T_RES_MASK)|USBFS_UEP_T_RES_NAK; USBFSD->UEP1_CTRL_H^=USBFS_UEP_T_TOG; }
         } else if (token==USBFS_UIS_TOKEN_OUT) {
             if (ep==0) USBFSD->UEP0_TX_LEN=0;
             else if (ep==2 && !out_pending) { memcpy(pending_out,ep2_out_buf,USB_REPORT_SIZE); out_pending=true; USBFSD->UEP2_CTRL_H=(USBFSD->UEP2_CTRL_H&~USBFS_UEP_R_RES_MASK)|USBFS_UEP_R_RES_NAK; }
