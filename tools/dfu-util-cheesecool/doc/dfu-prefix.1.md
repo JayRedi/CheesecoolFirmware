@@ -2,63 +2,61 @@
 % See AUTHORS file in source
 % September 2021
 
-# NAME
-dfu-prefix - add, check, or remove special firmware file prefix
+# 名称
+dfu-prefix - 添加、检查或删除特殊固件文件前缀
 
-# SYNOPSIS
+# 用法
 **dfu-prefix** [ **\-s** *address* | **\-L** ] **\--add** *DFU_FILE*\
 **dfu-prefix** [ **\-T** | **\-L** ] **\--check** *DFU_FILE*\
 **dfu-prefix** [ **\-T** | **\-L** ] **\--delete** *DFU_FILE*\
 **dfu-prefix** **\--help**\
 **dfu-prefix** **\--version**
 
-# DESCRIPTION
-The program **dfu-prefix** can be used to add, check or remove a prefix
-used by certain hardware manufacturers. The Stellaris format from TI
-and the LPC format from NXP is supported.
+# 描述
+**dfu-prefix** 可用于添加、检查或删除部分硬件制造商使用的前缀。
+支持 TI 的 Stellaris 格式和 NXP 的 LPC 格式。
 
-Note that a standard DFU firmware file has no concept of a prefix, and
-a DFU host tool like dfu-util passes the prefix on to the device as
-part of the normal firmware payload.
+请注意，标准 DFU 固件文件没有前缀概念；`dfu-util` 之类的 DFU Host 工具会将
+前缀作为普通固件 payload 的一部分传送给设备。
 
-# OPTIONS
+# 选项
 -s, \--stellaris-address *address*
-: (in combination with \--add) Add TI Stellaris address prefix to file
+:（与 \--add 一起使用）向文件添加 TI Stellaris 地址前缀
 
 -T, \--stellaris
-: (in combination with \--delete or \--check) Act on TI Stellaris address prefix of file
+:（与 \--delete 或 \--check 一起使用）处理文件中的 TI Stellaris 地址前缀
 
 -L, \--lpc-prefix
-: (in combination with \--add or \--delete or \--check) Use NXP LPC DFU prefix format
+:（与 \--add、\--delete 或 \--check 一起使用）使用 NXP LPC DFU 前缀格式
 
 -h, \--help
-: Displays a help message.
+: 显示帮助信息。
 
 -V, \--version
-: Displays the software version.
+: 显示软件版本。
 
-# EXAMPLES
+# 示例
 **dfu-prefix** \--stellaris-address 0x0100 \--add firmware.dfu
-: Adds a Stellaris prefix with load address 0x0100
+: 添加加载地址为 0x0100 的 Stellaris 前缀
 
 **dfu-prefix** \--stellaris \--check firmware.dfu
-: Checks the file firmware.dfu for a Stellaris prefix
+: 检查文件 firmware.dfu 是否包含 Stellaris 前缀
 
 **dfu-prefix** \--lpc-prefix \--delete firmware.dfu
-: Removes a LPC prefix from the file firmware.dfu
+: 从文件 firmware.dfu 中删除 LPC 前缀
 
-# EXIT VALUES
+# 退出值
 **0**
-: Success (also if prefix is missing)
+: 成功（即使缺少前缀也返回成功）
 
 **-64**
-: Usage error
+: 用法错误
 
-# BUGS
+# 错误报告
 https://sourceforge.net/p/dfu-util/tickets/
 
-# COPYRIGHT
-License GPLv2: GNU GPL version 2
+# 版权
+许可证 GPLv2：GNU GPL version 2
 
-# SEE ALSO
+# 另请参阅
 **dfu-suffix**(1), **dfu-util**(1)

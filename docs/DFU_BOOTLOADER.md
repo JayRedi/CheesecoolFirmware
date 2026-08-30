@@ -1,8 +1,9 @@
 # CheeseCool USB DFU Bootloader
 
-This integration follows the reference CH32X035 DFU project and keeps the existing application modules intact. The reference uses a standard USB DFU 1.1 EP0-only device compatible with `dfu-util`.
+此集成遵循 CH32X035 DFU 参考项目，并保持现有 Application 模块不变。参考实现使用与
+`dfu-util` 兼容的标准 USB DFU 1.1、仅 EP0 设备。
 
-## Flash and RAM layout
+## Flash 和 RAM 布局
 
 ```text
 0x00000000  Bootloader       8 KiB
@@ -14,45 +15,56 @@ This integration follows the reference CH32X035 DFU project and keeps the existi
 0x20005000  RAM end
 ```
 
-The reserved flag is `0x20004FF0`; the DFU request magic is `0xB0071DF0`. Both values are taken from the reference project's `config.h` and are mirrored in `include/dfu_config.h` and `bootloader/config.h`.
+保留 flag 为 `0x20004FF0`；DFU request magic 为 `0xB0071DF0`。两个值均取自参考项目的
+`config.h`，并同步定义在 `include/dfu_config.h` 和 `bootloader/config.h` 中。
 
-## Application request
+## Application 请求
 
-`system_request_dfu()` first commands 100% fan duty through `fan_controller`, writes the magic word, executes a RISC-V `fence rw, rw`, then calls `NVIC_SystemReset()`. The existing ROM ISP `system_bootloader.c` remains present but is not called by normal application flow. `CMD_ENTER_BOOTLOADER` is retained for packet compatibility and now requests the CheeseCool DFU Bootloader, not the WCH ROM ISP.
+`system_request_dfu()` 首先通过 `fan_controller` 设置风扇 100% 占空比，写入 magic word，执行 RISC-V
+`fence rw, rw`，然后调用 `NVIC_SystemReset()`。现有 ROM ISP `system_bootloader.c` 仍然保留，但正常
+Application 流程不会调用它。为保持数据包兼容性，`CMD_ENTER_BOOTLOADER` 仍然保留，但现在请求的是
+CheeseCool DFU Bootloader，而不是 WCH ROM ISP。
 
-The application USB transport now delivers command 8 (`CMD_ENTER_DFU`, compatible API alias `CMD_ENTER_BOOTLOADER`) and waits until its HID response has completed before calling the verified `system_request_dfu()` path. The explicit `ch32x035f8u6_evt_r0_dfu_test` environment still requests DFU after approximately 3 seconds; the default environment keeps the existing PWM debug test.
+Application USB transport 现在提供命令 8（`CMD_ENTER_DFU`，兼容 API 别名 `CMD_ENTER_BOOTLOADER`），
+并等待 HID 响应完成后再调用已验证的 `system_request_dfu()` 路径。显式的
+`ch32x035f8u6_evt_r0_dfu_test` 环境仍在约 3 秒后请求 DFU；默认环境保留现有 PWM debug test。
 
-## Bootloader decision and protection
+## Bootloader 决策与保护
 
-At reset the bootloader consumes the magic word. If it is absent and the first application word is nonzero/non-blank, it jumps to `0x2000`. If the application is blank/invalid, it remains in DFU. DFU writes use the application alias range `0x08002000..0x0800F800` and reject writes beyond the 54 KiB application region; the 8 KiB bootloader is never a valid download target.
+复位时 Bootloader 消费 magic word。如果 magic 不存在，且 Application 第一个 word 非零/非空白，
+则跳转到 `0x2000`。如果 Application 为空或无效，则留在 DFU。DFU 写入使用 Application alias 范围
+`0x08002000..0x0800F800`，并拒绝超出 54 KiB Application 区域的写入；8 KiB Bootloader 永远不是
+有效下载目标。
 
-## Build outputs
+## 构建输出
 
-`pio run` builds both environments. The post-build script creates:
+`pio run` 会构建两个环境。post-build 脚本生成：
 
 - `.pio/build/cheesecool_bootloader/bootloader.bin`
 - `.pio/build/ch32x035f8u6_evt_r0/application.bin`
 - `.pio/build/ch32x035f8u6_evt_r0/cheesecool-factory.bin`
 
-The factory image is exactly 62 KiB, filled with `0xFF`, with the bootloader at offset 0 and application at offset `0x2000`.
+factory image 恰好为 62 KiB，以 `0xFF` 填充，Bootloader 位于 offset 0，Application 位于 offset `0x2000`。
 
-## First installation
+## 首次安装
 
-Use hardware BOOT and WCH ROM ISP once, then flash the combined factory image at address zero:
+使用硬件 BOOT 和 WCH ROM ISP 一次，然后将合并的 factory image 烧录到地址零：
 
 ```text
 wchisp flash .pio/build/ch32x035f8u6_evt_r0/cheesecool-factory.bin
 ```
 
-Do not flash `application.bin` with `wchisp` at address zero: it is a raw image whose link address is `0x2000`, and the normal application PlatformIO environment deliberately does not configure ISP upload.
+不要使用 `wchisp` 将 `application.bin` 烧录到地址零：它是链接地址为 `0x2000` 的 raw image，且正常
+Application PlatformIO 环境刻意没有配置 ISP upload。
 
-## Later DFU update
+## 后续 DFU 更新
 
-After the Bootloader and a DFU-capable application are installed:
+安装 Bootloader 和支持 DFU 的 Application 后：
 
 ```text
 dfu-util -l
 dfu-util -a 0 -d 1a86:8035 -D .pio/build/ch32x035f8u6_evt_r0/application.bin -R
 ```
 
-The normal application environment uses `scripts/upload_dfu.py` as its custom PlatformIO uploader. It accepts an already-present DFU device or requests DFU through the application HID interface, then invokes `dfu-util`. The bootloader and diagnostic environments are not assigned this uploader.
+正常 Application 环境使用 `scripts/upload_dfu.py` 作为自定义 PlatformIO uploader。它接受已经存在的
+DFU 设备，或通过 Application HID 接口请求 DFU，然后调用 `dfu-util`。Bootloader 和诊断环境不使用此 uploader。

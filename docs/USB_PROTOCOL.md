@@ -1,39 +1,59 @@
-# USB Protocol V1
+# USB 协议 V1
 
-Reports are exactly 64 bytes. Byte 0 is protocol version (1), byte 1 command, byte 2 sequence, byte 3 payload length, bytes 4.. payload, and byte 63 is XOR checksum over bytes 0..62. Responses echo version, command, and sequence; byte 4 is the status code.
+Report 固定为 64 字节。Byte 0 是协议版本（1），byte 1 是 command，byte 2 是 sequence，byte 3 是
+payload length，bytes 4.. 是 payload，byte 63 是 bytes 0..62 的 XOR checksum。Response 会回显 version、
+command 和 sequence；byte 4 是 status code。
 
-For requests, byte 4 is the first payload byte. For responses, byte 4 is the status and byte 5 is the first payload byte. `payload length` excludes the status byte and is limited to 59 bytes. Unused report bytes are zero-filled. The checksum is the XOR of report bytes 0 through 62.
+对于 request，byte 4 是第一个 payload byte。对于 response，byte 4 是 status，byte 5 是第一个 payload byte。
+`payload length` 不包含 status byte，最大为 59 字节。未使用的 report byte 以零填充。checksum 是 report
+bytes 0 到 62 的 XOR。
 
-Commands: `1 PING`, `2 GET_INFO`, `3 SET_FAN_DUTY` (legacy, payload byte 0), `4 GET_FAN_STATUS`, `5 FAN_ENABLE`, `6 FAN_DISABLE`, `7 KEEPALIVE`, `8` legacy DFU command, `9 GET_STATUS`, `10 SET_MODE`, `11 SET_DUTY`, `12 SET_CURVE`, and `13 CMD_ENTER_DFU`. Commands 8 and 13 request the CheeseCool USB DFU Bootloader via the RAM hand-off flag; they do not request WCH ROM ISP. Both require a zero-length payload. The device sends the normal response first and resets after the HID IN transfer completes. Status codes are `0 OK`, `1 BAD_PACKET`, `2 BAD_COMMAND`, `3 NOT_SUPPORTED`, and `4 BAD_PARAMETER`.
+Commands：`1 PING`、`2 GET_INFO`、`3 SET_FAN_DUTY`（legacy，payload byte 0）、`4 GET_FAN_STATUS`、
+`5 FAN_ENABLE`、`6 FAN_DISABLE`、`7 KEEPALIVE`、`8` legacy DFU command、`9 GET_STATUS`、`10 SET_MODE`、
+`11 SET_DUTY`、`12 SET_CURVE` 和 `13 CMD_ENTER_DFU`。命令 8 和 13 通过 RAM hand-off flag 请求
+CheeseCool USB DFU Bootloader，不请求 WCH ROM ISP；二者都要求零长度 payload。设备先发送正常 response，
+待 HID IN transfer 完成后再复位。Status code 为 `0 OK`、`1 BAD_PACKET`、`2 BAD_COMMAND`、
+`3 NOT_SUPPORTED` 和 `4 BAD_PARAMETER`。
 
 ## SET_MODE (command 10)
 
-The request contains one payload byte at payload offset 0. The response has no payload and uses the common status and sequence fields.
+Request 在 payload offset 0 包含一个 payload byte。Response 没有 payload，并使用通用 status 和 sequence 字段。
 
-| Payload value | Mode | Behavior |
+| Payload value | Mode | 行为 |
 |---:|---|---|
 | 0 | `HOST_CONTROLLED` | Host-controlled mode; does not change the current duty. |
 | 1 | `MAX` | Enables the fan and commands 100% duty through `fan_controller`. |
 
-Other values, or a request payload length other than 1, return `BAD_PARAMETER` and do not change the mode. The CLI accepts `mode host` and `mode max`; AUTO and QUIET are not exposed because no corresponding control strategy exists in the current firmware. Fail-safe handling remains in its existing control path and can override ordinary output commands.
+其他值，或 payload length 不等于 1 的 request，返回 `BAD_PARAMETER`，且不改变 mode。CLI 接受
+`mode host` 和 `mode max`；由于当前固件没有对应的控制策略，未提供 AUTO 和 QUIET。Fail-safe 仍在
+现有控制路径中处理，并可覆盖普通输出命令。
 
 ## SET_DUTY (command 11)
 
-The request contains one payload byte at payload offset 0:
+Request 在 payload offset 0 包含一个 payload byte：
 
-| Offset | Size | Type / unit | Range | Meaning |
+| Offset | Size | Type / unit | Range | 含义 |
 |---:|---:|---|---:|---|
 | 0 | 1 | `uint8_t` / percent | 0–100 | Requested fan duty |
 
-The response has no payload. In `HOST_CONTROLLED` mode, a valid request calls the formal `fan_controller_set_duty()` API and returns `OK`. Values 101–255 and payload lengths other than 1 return `BAD_PARAMETER`. In `MAX` mode, the request returns `NOT_SUPPORTED`; it does not exit MAX or change the 100% output. Fail-safe or power-fault active state also rejects the request with `NOT_SUPPORTED`. The legacy command 3 remains supported through the same validation and control path.
+Response 没有 payload。在 `HOST_CONTROLLED` mode 中，有效 request 调用正式的
+`fan_controller_set_duty()` API 并返回 `OK`。101–255 的值以及 payload length 不等于 1 的 request
+返回 `BAD_PARAMETER`。在 `MAX` mode 中，request 返回 `NOT_SUPPORTED`，不会退出 MAX 或改变 100% 输出。
+Fail-safe 或 power-fault active state 也会以 `NOT_SUPPORTED` 拒绝 request。Legacy command 3 仍通过相同
+的校验和控制路径支持。
 
-The safety layer independently treats every structurally valid request using a known command ID as Host activity, even when the command returns `BAD_PARAMETER` or `NOT_SUPPORTED`. Invalid packets, unsupported command IDs, and USB configuration alone do not refresh Host activity. After reset, the application starts in `BOOT_WAIT` at 0% duty; it enters `FAILSAFE` after five minutes without any valid known request, or after 30 seconds without one after Host activity has first been seen. The current RAM-only fail-safe duty defaults to 50% and is constrained to 20–100%.
+Safety layer 独立地将每个结构有效且使用已知 command ID 的 request 视为 Host activity，即使该命令返回
+`BAD_PARAMETER` 或 `NOT_SUPPORTED`。无效 packet、不支持的 command ID 以及仅 USB configuration 变化，
+都不会刷新 Host activity。复位后 Application 以 0% duty 进入 `BOOT_WAIT`；五分钟内没有任何有效已知
+request 时进入 `FAILSAFE`，Host activity 首次出现后，连续 30 秒没有有效 request 时也进入 `FAILSAFE`。
+当前仅 RAM 的 fail-safe duty 默认为 50%，限制范围为 20–100%。
 
 ## GET_STATUS (command 9)
 
-The request has no payload. The response keeps the common header and returns a 17-byte payload. All multi-byte values are little-endian. Offsets below are relative to the payload (report byte 5); the status byte is report byte 4.
+Request 没有 payload。Response 保留通用 header，并返回 17 字节 payload。所有多字节值均为 little-endian。
+下表 offset 相对于 payload（report byte 5）；status byte 是 report byte 4。
 
-| Payload offset | Size | Type / unit | Meaning |
+| Payload offset | Size | Type / unit | 含义 |
 |---:|---:|---|---|
 | 0 | 1 | `uint8_t` | `mode`: 0 HOST_CONTROLLED, 1 MAX; sourced from `fan_controller` |
 | 1 | 1 | `uint8_t` / percent | `target_duty`: current formal fan-controller duty |
@@ -47,22 +67,30 @@ The request has no payload. The response keeps the common header and returns a 1
 | 15 | 1 | `uint8_t` | Firmware minor version |
 | 16 | 1 | `uint8_t` | Firmware patch version |
 
-`target_duty` and `actual_pwm_duty` are serialized from the same `fan_controller_get_duty()` value because the current firmware has no independent target register and no hardware PWM readback API. No status value is fabricated.
+由于当前固件没有独立 target register，也没有硬件 PWM readback API，`target_duty` 和 `actual_pwm_duty`
+都从同一个 `fan_controller_get_duty()` 值序列化。没有伪造任何 status value。
 
 ## SET_CURVE (command 12)
 
-The request payload is:
+Request payload 为：
 
-| Offset | Size | Type / unit | Range | Meaning |
+| Offset | Size | Type / unit | Range | 含义 |
 |---:|---:|---|---:|---|
 | 0 | 1 | `uint8_t` / count | 1–29 | Number of curve points |
 | 1 + 2×i | 1 | `uint8_t` / °C | 0–125 | Point `i` temperature |
 | 2 + 2×i | 1 | `uint8_t` / percent | 0–100 | Point `i` duty |
 
-Points must have strictly increasing temperatures. The maximum of 29 points is imposed by the 59-byte HID payload capacity. The device validates the complete request in a temporary RAM array, including exact payload length, point count, temperature range, duty range, and ordering, then commits it atomically to the formal fan-controller curve configuration. Invalid input returns `BAD_PARAMETER` and leaves the previous valid curve unchanged.
+温度点必须严格递增。由于 HID payload 容量为 59 字节，最多支持 29 个点。设备在临时 RAM array 中完整
+校验 request，包括精确 payload length、点数、温度范围、duty 范围和顺序，然后以原子方式提交到正式
+fan-controller curve configuration。无效输入返回 `BAD_PARAMETER`，并保持上一次有效曲线不变。
 
-The response returns `OK` and echoes the accepted curve using the same payload layout. There is currently no `GET_CURVE` command. The curve is RAM-only and is not used for control yet because AUTO mode and temperature sensing are not implemented; SET_CURVE does not change the current mode or duty. The CLI accepts, for example, `curve 40:30 50:45 60:65 70:80 80:100`.
+Response 返回 `OK`，并使用相同 payload layout 回显已接受的曲线。目前没有 `GET_CURVE` command。该曲线
+仅存于 RAM；由于 AUTO mode 和温度感测尚未实现，目前不用于控制。`SET_CURVE` 不改变当前 mode 或 duty。
+CLI 示例：`curve 40:30 50:45 60:65 70:80 80:100`。
 
 ## ENTER_DFU (command 13)
 
-The request has zero payload. A valid request returns `OK`, arms the existing pending-DFU flag, and waits until the HID response transmission completes before calling `system_request_dfu()`. The Application then disconnects and the CheeseCool DFU device appears as VID:PID `1A86:8035`, with Application target `0x2000`. Non-zero payload lengths return `BAD_PARAMETER` and do not reset. CLI usage is `cheesecoolctl.py dfu`; it waits a bounded time for DFU enumeration and does not automatically flash an Application.
+Request 为零长度 payload。有效 request 返回 `OK`，设置现有 pending-DFU flag，并等待 HID response transmission
+完成后再调用 `system_request_dfu()`。随后 Application 断开，CheeseCool DFU 设备以 VID:PID `1A86:8035`
+出现，Application target 为 `0x2000`。非零 payload length 返回 `BAD_PARAMETER`，不会复位。CLI 用法为
+`cheesecoolctl.py dfu`；它在限定时间内等待 DFU enumeration，不会自动烧录 Application。

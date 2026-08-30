@@ -2,71 +2,69 @@
 % See AUTHORS file in source
 % September 2021
 
-# NAME
-dfu-suffix - add, check, or remove DFU firmware file suffix
+# 名称
+dfu-suffix - 添加、检查或删除 DFU 固件文件后缀
 
-# SYNOPSIS
+# 用法
 **dfu-suffix** [*options*] **\--add** *DFU_FILE*\
 **dfu-suffix** **\--check** *DFU_FILE*\
 **dfu-suffix** **\--delete** *DFU_FILE*\
 **dfu-suffix** **\--help**\
 **dfu-suffix** **\--version**
 
-# DESCRIPTION
-The program **dfu-suffix** can be used to add, check or remove a DFU firmware file suffix,
-recommended for safely matching a firmware file and device.
+# 描述
+**dfu-suffix** 可用于添加、检查或删除 DFU 固件文件后缀，建议使用它来安全匹配
+固件文件与设备。
 
-Note that a suffix is recommended by the DFU standard, but not required.
-A DFU host tool like dfu-util will recognize the suffix and use it to check
-that the device is matching, but not transfer the suffix to the device.
+请注意，DFU 标准建议使用后缀，但并不强制要求。`dfu-util` 之类的 DFU Host 工具
+会识别后缀并用它检查设备是否匹配，但不会将后缀传送给设备。
 
-# OPTIONS
+# 选项
 -v, \--vid *vendorID*
-: Specify USB vendor ID (hexadecimal)
+: 指定 USB vendor ID（十六进制）
 
 -p, \--pid *productID*
-: Specify USB product ID (hexadecimal)
+: 指定 USB product ID（十六进制）
 
 -d, \--did *deviceID*
-: Specify USB device ID (hexadecimal)
+: 指定 USB device ID（十六进制）
 
 -S, \--spec *version*
-: Specify DFU specification version (hexadecimal)
+: 指定 DFU specification version（十六进制）
 
 -h, \--help
-: Displays a help message.
+: 显示帮助信息。
 
 -V, \--version
-: Displays the software version.
+: 显示软件版本。
 
-# EXAMPLES
+# 示例
 **dfu-suffix** \--vid 0123 \--add firmware.dfu
-: Adds a suffix matching vendor 0x0123 and product ID 0x4567.
-Since product and device ID are not specified,
-they will contain the wildcard value 0xFFFF.
+: 添加匹配 vendor 0x0123 和 product ID 0x4567 的后缀。
+由于未指定 product 和 device ID，二者将使用通配值 0xFFFF。
 
 **dfu-suffix** \--check firmware.dfu
-: Checks the file firmware.dfu for a valid DFU suffix
+: 检查文件 firmware.dfu 是否包含有效 DFU 后缀
 
 **dfu-suffix** \--delete firmware.dfu
-: Removes a valid DFU suffix from the file firmware.dfu
+: 从文件 firmware.dfu 中删除有效 DFU 后缀
 
-# EXIT VALUES
+# 退出值
 **0**
-: Success (also if suffix is missing)
+: 成功（即使缺少后缀也返回成功）
 
 **-64**
-: Usage error
+: 用法错误
 
-# LIMITATIONS
-**dfu-suffix** can not tell a broken DFU suffix (e.g. checksum mismatch)
-from a non-existing suffix, so only a valid suffix can be removed.
+# 限制
+**dfu-suffix** 无法区分损坏的 DFU 后缀（例如 checksum 不匹配）和不存在的后缀，
+因此只能删除有效后缀。
 
-# BUGS
+# 错误报告
 https://sourceforge.net/p/dfu-util/tickets/
 
-# COPYRIGHT
-License GPLv2: GNU GPL version 2
+# 版权
+许可证 GPLv2：GNU GPL version 2
 
-# SEE ALSO
+# 另请参阅
 **dfu-prefix**(1), **dfu-util**(1)
