@@ -80,6 +80,30 @@ static uint8_t usb_device_state;
 static uint32_t usb_attach_started_ms;
 #endif
 
+#if FEATURE_USB_ENUM_TRACE_V2
+#define USB_ENUM_TRACE_V2_MAGIC 0x32525445UL
+#define USB_ENUM_TRACE_V2_VERSION 1UL
+enum {
+    USB_ENUM_TRACE_V2_DISPATCH_NONE = 0,
+    USB_ENUM_TRACE_V2_DISPATCH_TRANSFER = 1,
+    USB_ENUM_TRACE_V2_DISPATCH_BUS_RST = 2,
+    USB_ENUM_TRACE_V2_DISPATCH_SUSPEND = 3,
+    USB_ENUM_TRACE_V2_DISPATCH_OTHER = 4
+};
+typedef struct {
+    volatile uint32_t snapshot;
+    volatile uint32_t decoded;
+    volatile uint32_t dispatch;
+} usb_enum_trace_v2_entry_t;
+typedef struct {
+    volatile uint32_t magic;
+    volatile uint32_t version;
+    volatile uint32_t count;
+    volatile usb_enum_trace_v2_entry_t entries[64];
+} usb_enum_trace_v2_t;
+#define USB_ENUM_TRACE_V2 ((usb_enum_trace_v2_t *)0x20000200UL)
+#endif
+
 #if FEATURE_USB_ATTACH_DIAG || FEATURE_USB_SETUP_DIAG || FEATURE_USB_DEVICE_DESC_DIAG || FEATURE_USB_SET_ADDRESS_DIAG || FEATURE_USB_CONFIG_DIAG || FEATURE_USB_POST_ADDRESS_DIAG || FEATURE_USB_POST_ADDRESS_FIX_DIAG || FEATURE_USB_CONFIG_LENGTH_DIAG || FEATURE_USB_CONFIG_IN_DIAG || FEATURE_USB_CONFIG_RUNTIME_DIAG
 enum {
     ATTACH_DIAG_PREPARE = 0,
@@ -1168,10 +1192,35 @@ void USBFS_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USBFS_IRQHandler(void)
 {
     uint8_t flags=USBFSD->INT_FG, status=USBFSD->INT_ST;
+#if FEATURE_USB_ENUM_TRACE_V2
+    uint32_t trace_slot=0U;
+    bool trace_valid=false;
+    if (USB_ENUM_TRACE_V2->count < 64U) {
+        trace_slot=USB_ENUM_TRACE_V2->count;
+        trace_valid=true;
+        USB_ENUM_TRACE_V2->entries[trace_slot].snapshot=
+            (uint32_t)flags | ((uint32_t)status<<8) |
+            ((uint32_t)USBFSD->DEV_ADDR<<16) |
+            ((uint32_t)usb_configuration<<24);
+        USB_ENUM_TRACE_V2->entries[trace_slot].decoded=
+            (((uint32_t)flags & (USBFS_UIF_TRANSFER|USBFS_UIF_BUS_RST|USBFS_UIF_SUSPEND|USBFS_UIF_FIFO_OV))>>0) |
+            (((uint32_t)status & (USBFS_UIS_TOG_OK|USBFS_SETUP_ACT))>>0) |
+            (((uint32_t)(status & USBFS_UIS_ENDP_MASK))<<8) |
+            (((uint32_t)(status & USBFS_UIS_TOKEN_MASK))<<8);
+        USB_ENUM_TRACE_V2->entries[trace_slot].dispatch=USB_ENUM_TRACE_V2_DISPATCH_NONE;
+        USB_ENUM_TRACE_V2->count++;
+    }
+#if FEATURE_USB_BUS_RST_PRIORITY_V2
+    if (flags & USBFS_UIF_BUS_RST) flags=(uint8_t)(flags & (uint8_t)~USBFS_UIF_TRANSFER);
+#endif
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
     usb_trace_log(USB_TRACE_IRQ_ENTRY);
 #endif
     if (flags&USBFS_UIF_TRANSFER) {
+#if FEATURE_USB_ENUM_TRACE_V2
+        if (trace_valid) USB_ENUM_TRACE_V2->entries[trace_slot].dispatch=USB_ENUM_TRACE_V2_DISPATCH_TRANSFER;
+#endif
         uint8_t token=status&USBFS_UIS_TOKEN_MASK, ep=status&USBFS_UIS_ENDP_MASK;
 #if FEATURE_USB_RAM_TRACE_DIAG
         if (token==USBFS_UIS_TOKEN_SETUP && ep==0) {
@@ -1380,6 +1429,9 @@ void USBFS_IRQHandler(void)
         usb_trace_log(USB_TRACE_TRANSFER_AFTER_CLEAR);
 #endif
     } else if (flags&USBFS_UIF_BUS_RST) {
+#if FEATURE_USB_ENUM_TRACE_V2
+        if (trace_valid) USB_ENUM_TRACE_V2->entries[trace_slot].dispatch=USB_ENUM_TRACE_V2_DISPATCH_BUS_RST;
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
         usb_trace_log(USB_TRACE_BUS_RST_BEFORE_HANDLE);
 #endif
@@ -1395,6 +1447,9 @@ void USBFS_IRQHandler(void)
 #endif
     }
     else if (flags&USBFS_UIF_SUSPEND) {
+#if FEATURE_USB_ENUM_TRACE_V2
+        if (trace_valid) USB_ENUM_TRACE_V2->entries[trace_slot].dispatch=USB_ENUM_TRACE_V2_DISPATCH_SUSPEND;
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
         usb_trace_log(USB_TRACE_SUSPEND_BEFORE_HANDLE);
 #endif
@@ -1403,7 +1458,12 @@ void USBFS_IRQHandler(void)
         usb_trace_log(USB_TRACE_SUSPEND_AFTER_CLEAR);
 #endif
     }
-    else USBFSD->INT_FG=flags;
+    else {
+#if FEATURE_USB_ENUM_TRACE_V2
+        if (trace_valid) USB_ENUM_TRACE_V2->entries[trace_slot].dispatch=USB_ENUM_TRACE_V2_DISPATCH_OTHER;
+#endif
+        USBFSD->INT_FG=flags;
+    }
 #if FEATURE_USB_RAM_TRACE_DIAG
     usb_trace_log(USB_TRACE_IRQ_EXIT);
 #endif
@@ -1414,6 +1474,11 @@ void usb_device_init(void)
 #if FEATURE_USB_DEVICE
     configured=false; out_pending=false; tx_busy=false; tx_done=false; dfu_reset_waiting=false; dfu_reset_due_ms=0U; protocol_mode=1; idle_rate=0;
     diag_start_ms=system_millis(); usb_protocol_init();
+#if FEATURE_USB_ENUM_TRACE_V2
+    USB_ENUM_TRACE_V2->magic=USB_ENUM_TRACE_V2_MAGIC;
+    USB_ENUM_TRACE_V2->version=USB_ENUM_TRACE_V2_VERSION;
+    USB_ENUM_TRACE_V2->count=0U;
+#endif
 #if FEATURE_USB_ENUM_TRACE
     usb_detach_begin();
 #elif FEATURE_USB_ATTACH_DIAG || FEATURE_USB_SETUP_DIAG || FEATURE_USB_DEVICE_DESC_DIAG || FEATURE_USB_SET_ADDRESS_DIAG || FEATURE_USB_CONFIG_DIAG || FEATURE_USB_POST_ADDRESS_DIAG || FEATURE_USB_POST_ADDRESS_FIX_DIAG || FEATURE_USB_CONFIG_LENGTH_DIAG || FEATURE_USB_CONFIG_IN_DIAG || FEATURE_USB_CONFIG_RUNTIME_DIAG
