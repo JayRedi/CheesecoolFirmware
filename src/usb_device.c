@@ -11,6 +11,9 @@
 #if FEATURE_USB_RAM_TRACE_DIAG
 #include "usb_trace.h"
 #endif
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+#include "usb_ep0_correlation_trace_v3.h"
+#endif
 
 #define USB_EP0_SIZE 64U
 #define USB_EP1_IN 0x81U
@@ -1020,6 +1023,12 @@ static void control_stall(void)
 
 static void control_setup(void)
 {
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+    usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_CONTROL_SETUP_ENTRY,
+                              USB_EP0_CORR_DISPATCH_TRANSFER,
+                              USBFSD->INT_FG,USBFSD->INT_ST,
+                              usb_configuration,ep0_buf);
+#endif
     uint8_t *s=ep0_buf;
     uint8_t request_type=s[0];
     uint16_t value=(uint16_t)(s[2]|((uint16_t)s[3]<<8));
@@ -1168,11 +1177,29 @@ void USBFS_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USBFS_IRQHandler(void)
 {
     uint8_t flags=USBFSD->INT_FG, status=USBFSD->INT_ST;
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+    uint8_t trace_dispatch=USB_EP0_CORR_DISPATCH_FALLBACK;
+    if ((flags&USBFS_UIF_TRANSFER) != 0U) trace_dispatch=USB_EP0_CORR_DISPATCH_TRANSFER;
+    else if ((flags&USBFS_UIF_BUS_RST) != 0U) trace_dispatch=USB_EP0_CORR_DISPATCH_BUS_RST;
+    else if ((flags&USBFS_UIF_SUSPEND) != 0U) trace_dispatch=USB_EP0_CORR_DISPATCH_SUSPEND;
+    usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_IRQ_ENTRY,trace_dispatch,
+                              flags,status,usb_configuration,ep0_buf);
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
     usb_trace_log(USB_TRACE_IRQ_ENTRY);
 #endif
     if (flags&USBFS_UIF_TRANSFER) {
         uint8_t token=status&USBFS_UIS_TOKEN_MASK, ep=status&USBFS_UIS_ENDP_MASK;
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+        usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_TRANSFER_BRANCH_ENTERED,
+                                  USB_EP0_CORR_DISPATCH_TRANSFER,
+                                  flags,status,usb_configuration,ep0_buf);
+        if (token==USBFS_UIS_TOKEN_SETUP) {
+            usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_SETUP_TOKEN_BRANCH_ENTERED,
+                                      USB_EP0_CORR_DISPATCH_TRANSFER,
+                                      flags,status,usb_configuration,ep0_buf);
+        }
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
         if (token==USBFS_UIS_TOKEN_SETUP && ep==0) {
             usb_trace_log_setup(USB_TRACE_TRANSFER_BEFORE_HANDLE,ep0_buf);
@@ -1181,6 +1208,11 @@ void USBFS_IRQHandler(void)
         }
 #endif
         if (token==USBFS_UIS_TOKEN_SETUP && ep==0) {
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+            usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_SETUP_EP0_ACCEPTED,
+                                      USB_EP0_CORR_DISPATCH_TRANSFER,
+                                      flags,status,usb_configuration,ep0_buf);
+#endif
 #if FEATURE_USB_SETUP_DIAG
             usb_setup_seen=true;
 #endif
@@ -1275,7 +1307,13 @@ void USBFS_IRQHandler(void)
                 first_post_address_string_setup_captured=true;
             }
 #endif
-            usb_setup_count++; usb_enum_trace_request(TRACE_SETUP_RECEIVED);
+            usb_setup_count++;
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+            usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_SETUP_COUNT_INCREMENTED,
+                                      USB_EP0_CORR_DISPATCH_TRANSFER,
+                                      flags,status,usb_configuration,ep0_buf);
+#endif
+            usb_enum_trace_request(TRACE_SETUP_RECEIVED);
             USBFSD->UEP0_CTRL_H=USBFS_UEP_T_TOG|USBFS_UEP_T_RES_NAK|USBFS_UEP_R_TOG|USBFS_UEP_R_RES_NAK; control_setup();
         } else if (token==USBFS_UIS_TOKEN_IN) {
             if (ep==0) {
@@ -1380,6 +1418,11 @@ void USBFS_IRQHandler(void)
         usb_trace_log(USB_TRACE_TRANSFER_AFTER_CLEAR);
 #endif
     } else if (flags&USBFS_UIF_BUS_RST) {
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+        usb_ep0_corr_trace_v3_log(USB_EP0_CORR_EVENT_BUS_RST_BRANCH_ENTERED,
+                                  USB_EP0_CORR_DISPATCH_BUS_RST,
+                                  flags,status,usb_configuration,ep0_buf);
+#endif
 #if FEATURE_USB_RAM_TRACE_DIAG
         usb_trace_log(USB_TRACE_BUS_RST_BEFORE_HANDLE);
 #endif
@@ -1412,6 +1455,9 @@ void USBFS_IRQHandler(void)
 void usb_device_init(void)
 {
 #if FEATURE_USB_DEVICE
+#if FEATURE_USB_EP0_CORRELATION_TRACE_V3
+    usb_ep0_corr_trace_v3_init();
+#endif
     configured=false; out_pending=false; tx_busy=false; tx_done=false; dfu_reset_waiting=false; dfu_reset_due_ms=0U; protocol_mode=1; idle_rate=0;
     diag_start_ms=system_millis(); usb_protocol_init();
 #if FEATURE_USB_ENUM_TRACE
