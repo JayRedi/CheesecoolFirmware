@@ -68,6 +68,12 @@ def main():
         raise SystemExit(f"magic/version 不匹配: magic=0x{magic:08X}, version={version}")
     if header_size != HEADER.size or entry_size != ENTRY.size:
         raise SystemExit(f"结构尺寸不匹配: header={header_size}, entry={entry_size}")
+    if capacity != 64:
+        raise SystemExit(f"capacity 不匹配: {capacity}, expected=64")
+    if frozen not in (0, 1):
+        raise SystemExit(f"frozen 非法: {frozen}")
+    if overflow not in (0, 1):
+        raise SystemExit(f"overflow 非法: {overflow}")
     expected = header_size + capacity * entry_size
     if len(data) != expected:
         raise SystemExit(f"dump 大小错误: actual={len(data)}, expected={expected}")
