@@ -1,5 +1,14 @@
-# PlatformIO 构建输出
+# PlatformIO / C/C++ 构建输出
 .pio/
+build/
+cmake-build-*/
+*.o
+*.a
+*.dylib
+*.elf
+*.map
+*.hex
+*.bin
 
 # Python 虚拟环境与缓存
 .venv/
@@ -12,17 +21,19 @@ __pycache__/
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch/
+.idea/
 
-# macOS 临时文件
+# macOS 与编辑器临时文件
 .DS_Store
-
-# 本地调试输出与临时采集文件
 *.log
+*.tmp
+*.swp
+*.swo
 *.lst
 *.dSYM/
 *.core
-usb_trace_capture.bin
-*_capture.bin
+openocd*.log
+*.openocd.log
 
 # 本地凭据、密钥与环境配置
 .env
@@ -33,6 +44,36 @@ usb_trace_capture.bin
 *.p12
 credentials.json
 
-# 本地生成的诊断结果（源代码和正式 artifacts 不受影响）
+# 本地调试、Flash readback 与恢复输出
 diagnostics/**/capture/
 tools/**/derived_*/
+target-readback*/
+target-*.dump
+*-readback.bin
+*_capture.bin
+*_trace.bin
+recovery-output/
+recovery-*/
+wch-link*/
+wlink-*/
+
+# 仅允许经审核、带来源和 SHA-256 说明的正式发布参考 artifact。
+!artifacts/
+artifacts/*
+!artifacts/release/
+!artifacts/release/**
+
+# dfu-util/libusb 等第三方工具的本地 configure/build 状态
+tools/dfu-util-cheesecool/.deps/
+tools/dfu-util-cheesecool/src/.deps/
+tools/dfu-util-cheesecool/Makefile
+tools/dfu-util-cheesecool/doc/Makefile
+tools/dfu-util-cheesecool/src/Makefile
+tools/dfu-util-cheesecool/config.h
+tools/dfu-util-cheesecool/config.status
+tools/dfu-util-cheesecool/stamp-h1
+tools/dfu-util-cheesecool/src/dfu-util
+tools/dfu-util-cheesecool/src/dfu-prefix
+tools/dfu-util-cheesecool/src/dfu-suffix
+tools/host_usb_diag/host_usb_diag
+tools/host_usb_diag/host_usb_diag_*

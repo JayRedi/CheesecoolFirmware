@@ -1,13 +1,32 @@
-# 系统架构
+# 最终系统架构
 
 ```text
-Mac Host -- USB HID (transport abstraction) --> USB Protocol --> Fan Controller
-                                                        |          |-- Fail-safe
-                                                        |          |-- PWM (TIM2_CH1/PA0)
-                                                        |          `-- TACH (EXTI/PA1)
-                                                        `--> Device status
+macOS/Linux 客户端
+        │ USB HID（64-byte Protocol V1）
+        ▼
+CH32X035F8U6 Application ──► Fan Controller ──► PA0 / TIM2_CH1
+        ▲                         │                    │
+        │                         │                    ▼
+GET_STATUS ◄── System Status ◄────┘              Q401 开漏反相级 ──► 4 针 PWM 风扇
+        │
+        └──────── PA1 / EXTI TACH ◄──────────────────────────────── 风扇转速脉冲
+
+主机不可用 / 无有效 V1 活动
+        │
+        ▼
+MCU timeout ──► failsafe（默认 50% duty）
 ```
 
-`main.c` 只初始化模块并运行非阻塞调度器。`fan_pwm` 负责 PA0 上的 TIM2 通道 1 和硬件反相。`fan_tach` 在 ISR 中统计下降沿，并按一秒窗口计算 RPM。`fan_controller` 是唯一面向业务的风扇控制 API。`failsafe` 独立于风扇模式跟踪 `BOOT_WAIT`、`HOST_ACTIVE` 和 `FAILSAFE`：上电从 0% 占空比开始，第一次有效的已知协议请求启动 Host activity，配置的仅 RAM fail-safe 占空比（默认 50%）在相应超时后生效。真实引脚确定前，`power_monitor` 在编译期禁用。`system_status` 是 USB 响应的唯一状态来源。
+`main.c` 运行非阻塞调度器。USB ISR 只处理端点与控制状态，Protocol V1 在主循环中解析；`fan_controller` 是风扇输出的业务入口；`fan_tach` 统计 PA1 下降沿并按 1 秒窗口换算 RPM；`system_status` 是 `GET_STATUS` 的状态来源。`power_monitor` 的真实 MCU 引脚尚未确认，当前在编译期禁用。
 
-原 TIM1/PA0 配对不适用于 CH32X035F8U6：PA0 是 TIM2_CH1。独立的 `tim2_pwm_diag` 测试已在硬件上验证 PA0 的 TIM2_CH1；精确 25 kHz 频率和占空比精度仍待示波器测量。
+`failsafe` 的状态为 `BOOT_WAIT`、`HOST_ACTIVE`、`FAILSAFE`。上电后若尚未见过主机活动，首次超时为 5 分钟；一旦已有有效已知 Protocol V1 命令，后续无活动超时固定为约 30 秒。两种情况均输出配置的安全占空比，当前默认 50%。
+
+## Flash 与 SRAM
+
+| 区域 | 地址 | 用途 |
+|---|---|---|
+| Bootloader | `0x08000000..0x08001FFF` | 8 KiB |
+| Application | 自 `0x08002000` 起 | 由 Bootloader 跳转运行 |
+| SRAM | `0x20000000..0x20004FFF` | 完整 20 KiB，Application 与 Bootloader 均无保留 magic 区 |
+
+不存在 software DFU magic、SRAM handoff word 或对应 linker reservation。PA0 的正确定时器路径是 `TIM2_CH1`，不是 TIM1。
