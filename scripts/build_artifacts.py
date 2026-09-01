@@ -18,10 +18,19 @@ def _copy_named(source=None, target=None, env=None, **kwargs):
         if len(boot_data) >= 0x2000:
             raise RuntimeError("bootloader must be smaller than 0x2000 bytes")
 
-        bootloader_only = bytearray([0xFF] * 0xF800)
-        bootloader_only[:len(boot_data)] = boot_data
-        if bootloader_only[:len(boot_data)] != boot_data:
+        bootloader_deployment = bytearray([0xFF] * 0x2000)
+        bootloader_deployment[:len(boot_data)] = boot_data
+        if bootloader_deployment[:len(boot_data)] != boot_data:
             raise RuntimeError("bootloader-only image does not start with bootloader data")
+
+        bootloader_deployment_bin = os.path.join(BUILD_DIR, "bootloader-deployment.bin")
+        with open(bootloader_deployment_bin, "wb") as image_file:
+            image_file.write(bootloader_deployment)
+        if len(bootloader_deployment) != 0x2000:
+            raise RuntimeError("bootloader deployment image must be exactly 8 KiB")
+
+        bootloader_only = bytearray([0xFF] * 0xF800)
+        bootloader_only[:0x2000] = bootloader_deployment
         if any(byte != 0xFF for byte in bootloader_only[0x2000:]):
             raise RuntimeError("bootloader-only image application region is not blank")
         if any(byte != 0xFF for byte in bootloader_only[0x2000:0x2100]):
@@ -32,23 +41,20 @@ def _copy_named(source=None, target=None, env=None, **kwargs):
             image_file.write(bootloader_only)
         print("Bootloader-only image validated: application region is all 0xFF")
         print("  bootloader.bin: %d bytes" % len(boot_data))
+        print("  bootloader-deployment.bin: %d bytes" % len(bootloader_deployment))
         print("  cheesecool-bootloader-only-test.bin: %d bytes" % len(bootloader_only))
         return
 
     app_bin = os.path.join(BUILD_DIR, "application.bin")
     shutil.copyfile(firmware_bin, app_bin)
 
-    if PIOENV in ("ch32x035f8u6_evt_r0_dfu_test", "ch32x035f8u6_evt_r0_usb_diag"):
-        print("DFU Test application artifact generated; factory image generation skipped")
+    if PIOENV == "ch32x035f8u6_evt_r0_usb_diag":
+        print("USB diagnostic application artifact generated; factory image generation skipped")
         return
 
     boot_bin = os.path.join(PROJECT_DIR, ".pio", "build", "cheesecool_bootloader", "bootloader.bin")
-    if PIOENV == "ch32x035f8u6_evt_r0_dfu_test":
-        factory_name = "cheesecool-factory-dfu-test.bin"
-    elif PIOENV == "reference_min_app":
+    if PIOENV == "reference_min_app":
         factory_name = "cheesecool-factory-reference-minapp.bin"
-    elif PIOENV == "dfu_handoff_diag":
-        factory_name = "cheesecool-factory-dfu-handoff-diag.bin"
     elif PIOENV == "initialization_bisect_diag":
         factory_name = "cheesecool-factory-init-bisect.bin"
     elif PIOENV == "fan_controller_diag":

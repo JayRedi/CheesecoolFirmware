@@ -6,10 +6,7 @@
 #define APP_BASE               0x00002000u
 #define APP_SIZE               (0xF800u - APP_BASE)
 
-#define BOOT_FLAG_ADDR         0x20004FF0u
-#define BOOT_MAGIC_DFU         0xB0071DF0u
 #define DFU_ENTER_IF_NO_APP    1
-#define DFU_BUTTON_ENABLE      0
 #define DFU_TRANSFER_SIZE      64
 #define DFU_MANIFEST_REBOOT_LOOPS 12000000u
 
