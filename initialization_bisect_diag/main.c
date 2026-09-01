@@ -7,7 +7,6 @@
 #include "fan_controller.h"
 #include "fan_tach.h"
 #include "power_monitor.h"
-#include "system_dfu.h"
 #include "system_status.h"
 #include "usb_device.h"
 
@@ -116,5 +115,5 @@ int main(void)
     fan_controller_set_duty(100U);
     Delay_Ms(2000);
 
-    system_request_dfu();
+    while (1) { }
 }

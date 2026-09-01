@@ -3,7 +3,7 @@ __stack_size = 2048;
 PROVIDE(_stack_size = __stack_size);
 MEMORY {
     FLASH (rx) : ORIGIN = 0x00002000, LENGTH = 54K
-    RAM (xrw)  : ORIGIN = 0x20000000, LENGTH = 0x4FF0
+    RAM (xrw)  : ORIGIN = 0x20000000, LENGTH = 0x5000
 }
 SECTIONS {
     .init : { . = ALIGN(4); KEEP(*(SORT_NONE(.init))) . = ALIGN(4); } > FLASH AT> FLASH

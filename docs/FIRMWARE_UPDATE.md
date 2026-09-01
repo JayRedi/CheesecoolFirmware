@@ -1,12 +1,19 @@
 # 固件更新流程
 
-正常 Application 链接在 `0x2000`；因此 `application.bin` 绝不能作为从零地址开始的镜像发送给 WCH ROM ISP。
+Application 链接在 `0x2000`；`application.bin` 绝不能作为从零地址开始的镜像写入。
 
-`scripts/upload_dfu.py` 是正常 Application 环境的 PlatformIO 自定义上传器：
+软件触发 DFU 已移除。先按既有官方/非软件 Bootloader-entry procedure 使 CheeseCool DFU 设备
+`1a86:8035` 枚举，然后执行：
 
-1. 检查已验证的 CheeseCool DFU 设备 `1a86:8035`。
-2. 如果不存在，检查 Application HID 设备 `1a86:fe01`，并发送协议命令 8（`CMD_ENTER_DFU`）。
-3. 以 200 ms 间隔轮询 DFU 设备，最长 5 秒。
-4. 执行 `dfu-util -a 0 -d 1a86:8035 -D application.bin -R`。
+```text
+pio run -e ch32x035f8u6_evt_r0 -t upload
+```
 
-首次安装仍需要通过 WCH ROM ISP 写入现有 factory image。Bootloader 和诊断环境均未启用自动上传器。
+`scripts/upload_dfu.py` 会确认 DFU device 已经存在，然后调用：
+
+```text
+dfu-util -a 0 -d 1a86:8035 -D application.bin -R
+```
+
+它不会检测 HID Application 后发送命令 `0x08` 或 `0x0D`，也不会请求 reset。无 Application 时，
+Bootloader 的 `DFU_ENTER_IF_NO_APP=1` 保留为防砖回退；不要通过刻意破坏有效 Application 来测试该路径。

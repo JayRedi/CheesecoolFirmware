@@ -1,12 +1,10 @@
 /* RAM-only diagnostic image. There is deliberately no FLASH region. */
 ENTRY(_start)
 
-__stack_bottom = 0x200047F0;
-__stack_top = 0x20004FF0;
-__dfu_magic_start = 0x20004FF0;
-__dfu_magic_end = 0x20005000;
+__stack_bottom = 0x20004800;
+__stack_top = 0x20005000;
 
-MEMORY { RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 0x4FF0 }
+MEMORY { RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 0x5000 }
 
 SECTIONS
 {
@@ -44,12 +42,12 @@ SECTIONS
         . = ALIGN(4); __usb_trace_start = .; KEEP(*(.usb_trace))
         . = ALIGN(4); __usb_trace_end = .;
     } > RAM
-    .stack 0x200047F0 (NOLOAD) :
+    .stack 0x20004800 (NOLOAD) :
     {
         . = ALIGN(16);
-        __susrstack = ABSOLUTE(0x200047F0);
+        __susrstack = ABSOLUTE(0x20004800);
         . += 0x800;
-        __eusrstack = ABSOLUTE(0x20004FF0);
+        __eusrstack = ABSOLUTE(0x20005000);
     } > RAM
     /DISCARD/ : { *(.comment .note .eh_frame .eh_frame.*) }
 }
@@ -60,6 +58,3 @@ ASSERT(__usb_dma_end <= __stack_bottom, "USB DMA overlaps stack")
 ASSERT(__usb_trace_end <= __stack_bottom, "USB trace overlaps stack")
 ASSERT(__image_end <= __stack_bottom, "RAM image overlaps stack")
 ASSERT(__stack_bottom < __stack_top, "invalid stack bounds")
-ASSERT(__stack_top <= __dfu_magic_start, "stack overlaps DFU magic")
-ASSERT(__dfu_magic_start == 0x20004FF0, "DFU magic boundary changed")
-ASSERT(__dfu_magic_end == 0x20005000, "DFU magic end boundary changed")

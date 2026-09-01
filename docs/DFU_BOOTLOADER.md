@@ -1,9 +1,9 @@
 # CheeseCool USB DFU Bootloader
 
-此集成遵循 CH32X035 DFU 参考项目，并保持现有 Application 模块不变。参考实现使用与
-`dfu-util` 兼容的标准 USB DFU 1.1、仅 EP0 设备。
+CheeseCool Bootloader 保留标准 USB DFU 1.1 transport、Application 校验、Application Flash 映射和
+`DFU_ENTER_IF_NO_APP=1` 防砖回退。它不再检查 SRAM magic，Application 也不再能请求 Bootloader。
 
-## Flash 和 RAM 布局
+## Flash 与 RAM 布局
 
 ```text
 0x00000000  Bootloader       8 KiB
@@ -11,60 +11,27 @@
 0x0000F800  end of user flash
 
 0x20000000  RAM
-0x20004FF0  reserved hand-off flag word
 0x20005000  RAM end
 ```
 
-保留 flag 为 `0x20004FF0`；DFU request magic 为 `0xB0071DF0`。两个值均取自参考项目的
-`config.h`，并同步定义在 `include/dfu_config.h` 和 `bootloader/config.h` 中。
+`0x20004FF0..0x20004FFF` 已归还为普通 SRAM；没有 DFU handoff word、magic value 或特殊 linker
+reservation。Application 与 Bootloader 的 linker RAM 均为完整 20 KiB (`0x5000`)。
 
-## Application 请求
+## Bootloader 决策
 
-`system_request_dfu()` 首先通过 `fan_controller` 设置风扇 100% 占空比，写入 magic word，执行 RISC-V
-`fence rw, rw`，然后调用 `NVIC_SystemReset()`。现有 ROM ISP `system_bootloader.c` 仍然保留，但正常
-Application 流程不会调用它。为保持数据包兼容性，`CMD_ENTER_BOOTLOADER` 仍然保留，但现在请求的是
-CheeseCool DFU Bootloader，而不是 WCH ROM ISP。
+若 Application 首 word 有效，Bootloader 跳转至 `0x2000`。若 Application 缺失或无效，
+`DFU_ENTER_IF_NO_APP=1` 使 Bootloader 保持在 DFU，作为防砖回退。该回退不是 Application 可触发的功能。
 
-Application USB transport 现在提供命令 8（`CMD_ENTER_DFU`，兼容 API 别名 `CMD_ENTER_BOOTLOADER`），
-并等待 HID 响应完成后再调用已验证的 `system_request_dfu()` 路径。显式的
-`ch32x035f8u6_evt_r0_dfu_test` 环境仍在约 3 秒后请求 DFU；默认环境保留现有 PWM debug test。
+既有官方/非软件 Bootloader entry 及其 USB D+/D- 行为不在本次修改范围内；本项目没有新增 GPIO、按钮、
+strap 或 Application-side entry mechanism。
 
-## Bootloader 决策与保护
+## DFU 下载
 
-复位时 Bootloader 消费 magic word。如果 magic 不存在，且 Application 第一个 word 非零/非空白，
-则跳转到 `0x2000`。如果 Application 为空或无效，则留在 DFU。DFU 写入使用 Application alias 范围
-`0x08002000..0x0800F800`，并拒绝超出 54 KiB Application 区域的写入；8 KiB Bootloader 永远不是
-有效下载目标。
-
-## 构建输出
-
-`pio run` 会构建两个环境。post-build 脚本生成：
-
-- `.pio/build/cheesecool_bootloader/bootloader.bin`
-- `.pio/build/ch32x035f8u6_evt_r0/application.bin`
-- `.pio/build/ch32x035f8u6_evt_r0/cheesecool-factory.bin`
-
-factory image 恰好为 62 KiB，以 `0xFF` 填充，Bootloader 位于 offset 0，Application 位于 offset `0x2000`。
-
-## 首次安装
-
-使用硬件 BOOT 和 WCH ROM ISP 一次，然后将合并的 factory image 烧录到地址零：
+在既有非软件入口已经使 DFU 设备 `1a86:8035` 枚举后，使用：
 
 ```text
-wchisp flash .pio/build/ch32x035f8u6_evt_r0/cheesecool-factory.bin
-```
-
-不要使用 `wchisp` 将 `application.bin` 烧录到地址零：它是链接地址为 `0x2000` 的 raw image，且正常
-Application PlatformIO 环境刻意没有配置 ISP upload。
-
-## 后续 DFU 更新
-
-安装 Bootloader 和支持 DFU 的 Application 后：
-
-```text
-dfu-util -l
 dfu-util -a 0 -d 1a86:8035 -D .pio/build/ch32x035f8u6_evt_r0/application.bin -R
 ```
 
-正常 Application 环境使用 `scripts/upload_dfu.py` 作为自定义 PlatformIO uploader。它接受已经存在的
-DFU 设备，或通过 Application HID 接口请求 DFU，然后调用 `dfu-util`。Bootloader 和诊断环境不使用此 uploader。
+Bootloader 将 DFU block 0 映射到 Application 区域 `0x08002000..0x0800F800`；不要传入物理地址 override。
+`scripts/upload_dfu.py` 只接受已存在的 DFU device，绝不会向 Application HID 发送 `0x08` 或 `0x0D`。

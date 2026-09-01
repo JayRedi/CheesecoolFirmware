@@ -5,7 +5,6 @@
 #include "ch32x035_rcc.h"
 #include "usb_device.h"
 #include "usb_protocol.h"
-#include "system_dfu.h"
 #include "system_status.h"
 #include "fan_controller.h"
 #if FEATURE_USB_RAM_TRACE_DIAG
@@ -55,8 +54,6 @@ static volatile bool configured;
 static volatile bool out_pending;
 static volatile bool tx_busy;
 static volatile bool tx_done;
-static bool dfu_reset_waiting;
-static uint32_t dfu_reset_due_ms;
 static volatile uint8_t usb_address;
 static volatile uint8_t usb_configuration;
 static volatile uint8_t protocol_mode;
@@ -151,7 +148,6 @@ volatile uint16_t config_runtime_t_len_at_in;
 volatile uint16_t config_runtime_ctrl_h_at_in;
 static bool config_runtime_active;
 static bool config_runtime_output_started;
-static bool config_runtime_dfu_due;
 static uint8_t config_runtime_phase;
 static uint32_t config_runtime_phase_ms;
 static uint8_t config_runtime_pulse_index;
@@ -162,14 +158,12 @@ static uint8_t config_runtime_in_pulses;
 volatile bool config_request_seen;
 volatile uint16_t first_config_wLength;
 static bool binary_wlength9_result_started;
-static bool binary_wlength9_dfu_due;
 static uint32_t binary_wlength9_result_ms;
 static bool binary_wlength9_yes;
 #endif
 #if FEATURE_USB_BINARY_CONFIG_SEEN_DIAG
 volatile bool config_seen_request;
 static bool binary_config_seen_result_started;
-static bool binary_config_seen_dfu_due;
 static uint32_t binary_config_seen_result_ms;
 static bool binary_config_seen_yes;
 #endif
@@ -178,7 +172,6 @@ volatile bool address_applied;
 volatile bool post_address_setup_seen;
 volatile bool post_address_bus_reset_seen;
 static bool binary_post_address_result_started;
-static bool binary_post_address_dfu_due;
 static uint32_t binary_post_address_result_ms;
 #endif
 #if FEATURE_USB_BINARY_POST_ADDRESS_GET_DESCRIPTOR_DIAG
@@ -190,7 +183,6 @@ volatile uint16_t first_post_address_wValue;
 volatile uint16_t first_post_address_wIndex;
 volatile uint16_t first_post_address_wLength;
 static bool binary_post_address_get_result_started;
-static bool binary_post_address_get_dfu_due;
 static uint32_t binary_post_address_get_result_ms;
 static bool binary_post_address_get_yes;
 #endif
@@ -203,7 +195,6 @@ volatile uint16_t first_post_address_config_wValue;
 volatile uint16_t first_post_address_config_wIndex;
 volatile uint16_t first_post_address_config_wLength;
 static bool binary_post_address_config_result_started;
-static bool binary_post_address_config_dfu_due;
 static uint32_t binary_post_address_config_result_ms;
 static bool binary_post_address_config_yes;
 #endif
@@ -216,7 +207,6 @@ volatile uint16_t first_post_address_string_wValue;
 volatile uint16_t first_post_address_string_wIndex;
 volatile uint16_t first_post_address_string_wLength;
 static bool binary_post_address_string_result_started;
-static bool binary_post_address_string_dfu_due;
 static uint32_t binary_post_address_string_result_ms;
 static bool binary_post_address_string_yes;
 #endif
@@ -443,7 +433,6 @@ void usb_attach_diag_start(void)
     config_runtime_ctrl_h_at_in=0;
     config_runtime_active=false;
     config_runtime_output_started=false;
-    config_runtime_dfu_due=false;
     config_runtime_phase=0;
     config_runtime_phase_ms=0;
     config_runtime_pulse_index=0;
@@ -454,14 +443,12 @@ void usb_attach_diag_start(void)
     config_request_seen=false;
     first_config_wLength=0;
     binary_wlength9_result_started=false;
-    binary_wlength9_dfu_due=false;
     binary_wlength9_result_ms=0;
     binary_wlength9_yes=false;
 #endif
 #if FEATURE_USB_BINARY_CONFIG_SEEN_DIAG
     config_seen_request=false;
     binary_config_seen_result_started=false;
-    binary_config_seen_dfu_due=false;
     binary_config_seen_result_ms=0;
     binary_config_seen_yes=false;
 #endif
@@ -470,7 +457,6 @@ void usb_attach_diag_start(void)
     post_address_setup_seen=false;
     post_address_bus_reset_seen=false;
     binary_post_address_result_started=false;
-    binary_post_address_dfu_due=false;
     binary_post_address_result_ms=0;
 #endif
 #if FEATURE_USB_BINARY_POST_ADDRESS_GET_DESCRIPTOR_DIAG
@@ -482,7 +468,6 @@ void usb_attach_diag_start(void)
     first_post_address_wIndex=0;
     first_post_address_wLength=0;
     binary_post_address_get_result_started=false;
-    binary_post_address_get_dfu_due=false;
     binary_post_address_get_result_ms=0;
     binary_post_address_get_yes=false;
 #endif
@@ -495,7 +480,6 @@ void usb_attach_diag_start(void)
     first_post_address_config_wIndex=0;
     first_post_address_config_wLength=0;
     binary_post_address_config_result_started=false;
-    binary_post_address_config_dfu_due=false;
     binary_post_address_config_result_ms=0;
     binary_post_address_config_yes=false;
 #endif
@@ -508,7 +492,6 @@ void usb_attach_diag_start(void)
     first_post_address_string_wIndex=0;
     first_post_address_string_wLength=0;
     binary_post_address_string_result_started=false;
-    binary_post_address_string_dfu_due=false;
     binary_post_address_string_result_ms=0;
     binary_post_address_string_yes=false;
 #endif
@@ -680,7 +663,7 @@ static void config_runtime_diag_task(uint32_t now)
         }
         break;
     case CONFIG_RUNTIME_FINAL:
-        if (elapsed>=5000UL) { config_runtime_phase=CONFIG_RUNTIME_DONE; config_runtime_dfu_due=true; }
+        if (elapsed>=5000UL) { config_runtime_phase=CONFIG_RUNTIME_DONE; }
         break;
     default:
         break;
@@ -705,7 +688,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_post_address_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_post_address_result_started=false;
-            binary_post_address_dfu_due=true;
         }
         return;
     }
@@ -715,7 +697,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_post_address_get_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_post_address_get_result_started=false;
-            binary_post_address_get_dfu_due=true;
         }
         return;
     }
@@ -725,7 +706,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_post_address_config_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_post_address_config_result_started=false;
-            binary_post_address_config_dfu_due=true;
         }
         return;
     }
@@ -735,7 +715,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_post_address_string_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_post_address_string_result_started=false;
-            binary_post_address_string_dfu_due=true;
         }
         return;
     }
@@ -745,7 +724,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_config_seen_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_config_seen_result_started=false;
-            binary_config_seen_dfu_due=true;
         }
         return;
     }
@@ -755,7 +733,6 @@ static void usb_attach_diag_task(void)
         if ((uint32_t)(now-binary_wlength9_result_ms)>=15000UL) {
             fan_controller_set_duty(100U);
             binary_wlength9_result_started=false;
-            binary_wlength9_dfu_due=true;
         }
         return;
     }
@@ -1417,7 +1394,7 @@ void USBFS_IRQHandler(void)
 void usb_device_init(void)
 {
 #if FEATURE_USB_DEVICE
-    configured=false; out_pending=false; tx_busy=false; tx_done=false; dfu_reset_waiting=false; dfu_reset_due_ms=0U; protocol_mode=1; idle_rate=0;
+    configured=false; out_pending=false; tx_busy=false; tx_done=false; protocol_mode=1; idle_rate=0;
     diag_start_ms=system_millis(); usb_protocol_init();
 #if FEATURE_USB_ENUM_TRACE
     usb_detach_begin();
@@ -1499,52 +1476,24 @@ void usb_device_task(void)
 #endif
     uint8_t request[USB_REPORT_SIZE], response[USB_REPORT_SIZE];
     if (usb_device_receive_report(request)) { usb_protocol_process(request,response); usb_device_send_report(response); }
-    if (usb_protocol_dfu_pending()) {
-        if (!dfu_reset_waiting && usb_device_tx_complete()) {
-            dfu_reset_waiting=true;
-            dfu_reset_due_ms=system_millis()+20UL;
-        }
-        if (dfu_reset_waiting && (uint32_t)(system_millis()-dfu_reset_due_ms)<0x80000000UL) system_request_dfu();
-    }
 #if FEATURE_USB_CONFIG_RUNTIME_DIAG
-    if (config_runtime_dfu_due) {
-        config_runtime_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Runtime diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_WLENGTH9_DIAG
-    if (binary_wlength9_dfu_due) {
-        binary_wlength9_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_CONFIG_SEEN_DIAG
-    if (binary_config_seen_dfu_due) {
-        binary_config_seen_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_POST_ADDRESS_SETUP_DIAG
-    if (binary_post_address_dfu_due) {
-        binary_post_address_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_POST_ADDRESS_GET_DESCRIPTOR_DIAG
-    if (binary_post_address_get_dfu_due) {
-        binary_post_address_get_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_POST_ADDRESS_CONFIG_TYPE_DIAG
-    if (binary_post_address_config_dfu_due) {
-        binary_post_address_config_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_BINARY_POST_ADDRESS_STRING_TYPE_DIAG
-    if (binary_post_address_string_dfu_due) {
-        binary_post_address_string_dfu_due=false;
-        system_request_dfu();
-    }
+    /* Binary diagnostic completion remains observable without a reset. */
 #elif FEATURE_USB_RAM_TRACE_DIAG
     /* Keep the frozen RAM trace available; no automatic DFU is requested. */
 #elif FEATURE_USB_DIAG
-    if (!usb_protocol_dfu_pending() && (uint32_t)(system_millis()-diag_start_ms)>=USB_DIAG_TIMEOUT_MS) system_request_dfu();
+    (void)diag_start_ms;
 #endif
 #endif
 }

@@ -24,5 +24,5 @@
 
 原 TIM1_CH1/PA0 分配失败，因为 CH32X035F8U6 将 PA0 映射到 TIM2_CH1，而不是 TIM1_CH1。独立的
 `tim2_pwm_diag` Application 验证了完整的 PA0 -> TIM2_CH1 -> Q401 -> FAN PWM 路径：两轮测试都显示
-转速从慢到全速单调变化，随后 Application 进入已验证的 DFU Bootloader。精确 25 kHz 频率和占空比值
+转速从慢到全速单调变化。该历史诊断曾在测试结束后请求 DFU；软件触发 DFU 已移除。精确 25 kHz 频率和占空比值
 仍待示波器测量。

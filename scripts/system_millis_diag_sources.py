@@ -7,5 +7,5 @@ env.BuildSources(
 env.BuildSources(
     "$BUILD_DIR/SystemMillisDiagFirmwareSources",
     "$PROJECT_DIR/src",
-    "-<*> +<fan_controller.c> +<fan_pwm.c> +<system_dfu.c>",
+    "-<*> +<fan_controller.c> +<fan_pwm.c>",
 )

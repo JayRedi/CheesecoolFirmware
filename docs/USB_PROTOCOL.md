@@ -9,10 +9,9 @@ command 和 sequence；byte 4 是 status code。
 bytes 0 到 62 的 XOR。
 
 Commands：`1 PING`、`2 GET_INFO`、`3 SET_FAN_DUTY`（legacy，payload byte 0）、`4 GET_FAN_STATUS`、
-`5 FAN_ENABLE`、`6 FAN_DISABLE`、`7 KEEPALIVE`、`8` legacy DFU command、`9 GET_STATUS`、`10 SET_MODE`、
-`11 SET_DUTY`、`12 SET_CURVE` 和 `13 CMD_ENTER_DFU`。命令 8 和 13 通过 RAM hand-off flag 请求
-CheeseCool USB DFU Bootloader，不请求 WCH ROM ISP；二者都要求零长度 payload。设备先发送正常 response，
-待 HID IN transfer 完成后再复位。Status code 为 `0 OK`、`1 BAD_PACKET`、`2 BAD_COMMAND`、
+`5 FAN_ENABLE`、`6 FAN_DISABLE`、`7 KEEPALIVE`、`8 RESERVED`、`9 GET_STATUS`、`10 SET_MODE`、
+`11 SET_DUTY`、`12 SET_CURVE` 和 `13 RESERVED`。命令 8 与 13 永久保留，均返回 `BAD_COMMAND`；它们不写 RAM、
+不刷新 Host activity、不改变风扇状态，也不会复位或进入 DFU。Status code 为 `0 OK`、`1 BAD_PACKET`、`2 BAD_COMMAND`、
 `3 NOT_SUPPORTED` 和 `4 BAD_PARAMETER`。
 
 ## SET_MODE (command 10)
@@ -88,9 +87,8 @@ Response 返回 `OK`，并使用相同 payload layout 回显已接受的曲线�
 仅存于 RAM；由于 AUTO mode 和温度感测尚未实现，目前不用于控制。`SET_CURVE` 不改变当前 mode 或 duty。
 CLI 示例：`curve 40:30 50:45 60:65 70:80 80:100`。
 
-## ENTER_DFU (command 13)
+## Reserved commands (8 and 13)
 
-Request 为零长度 payload。有效 request 返回 `OK`，设置现有 pending-DFU flag，并等待 HID response transmission
-完成后再调用 `system_request_dfu()`。随后 Application 断开，CheeseCool DFU 设备以 VID:PID `1A86:8035`
-出现，Application target 为 `0x2000`。非零 payload length 返回 `BAD_PARAMETER`，不会复位。CLI 用法为
-`cheesecoolctl.py dfu`；它在限定时间内等待 DFU enumeration，不会自动烧录 Application。
+`0x08` 与 `0x0D` 是永久保留的协议 ID，不能重新分配。任意 payload length 均返回 `BAD_COMMAND`。
+它们不触发 reset、DFU request、RAM handoff、Bootloader jump 或持久状态变化。`cheesecoolctl.py reserved-test`
+可在已枚举的 HID Application 上验证两个响应。

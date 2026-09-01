@@ -15,9 +15,6 @@
 #ifndef FEATURE_DEBUG_TEST
 #define FEATURE_DEBUG_TEST 0
 #endif
-#ifndef FEATURE_DFU_TEST
-#define FEATURE_DFU_TEST 0
-#endif
 #ifndef FEATURE_USB_DEVICE
 #define FEATURE_USB_DEVICE 1
 #endif
