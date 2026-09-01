@@ -4,7 +4,6 @@
 #include "ch32x035_tim.h"
 #include "debug.h"
 #include "fan_controller.h"
-#include "system_dfu.h"
 
 #define PWM_FREQUENCY_HZ 25000UL
 
@@ -56,7 +55,6 @@ static void tim2_pwm_init(void)
     TIM_Cmd(TIM2, ENABLE);
 }
 
-/* Minimal dependency shim for the already-verified system_request_dfu(). */
 void fan_controller_enable(void)
 {
     controller_enabled = 1U;
@@ -95,5 +93,5 @@ int main(void)
         Delay_Ms(3000U);
     }
 
-    system_request_dfu();
+    while (1) { }
 }

@@ -4,7 +4,6 @@
 #include "debug.h"
 #include "fan_controller.h"
 #include "fan_pwm.h"
-#include "system_dfu.h"
 
 volatile uint32_t pwm_diag_stage;
 
@@ -75,5 +74,5 @@ int main(void)
     Delay_Ms(2000);
 
     pwm_diag_stage = 0xA7U;
-    system_request_dfu();
+    while (1) { }
 }

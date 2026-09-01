@@ -6,9 +6,9 @@
 内存约定：
 
 - SRAM image: `0x20000000` upward
-- usable RAM end: `0x20004FEF`
-- stack: `0x200047F0` through `0x20004FEF`
-- DFU magic reservation: `0x20004FF0` through `0x20004FFF`
+- usable RAM end: `0x20004FFF`
+- stack: `0x20004800` through `0x20004FFF`
+- no DFU magic reservation
 - vector table: linker-enforced 64-byte alignment
 - `.usb_dma`: `NOLOAD`, after normal image sections and before stack
 
@@ -35,5 +35,5 @@ PFIC 相关 CSR，在 fast-interrupt mode 下将 `mtvec` 设置为 RAM vector ta
 DFU magic 写入。本骨架不含这些依赖，也不包含 USB 行为。
 
 在任何加载或执行前，检查 ELF/map/sections，并验证所有 `PT_LOAD` 和 symbol 均位于
-`0x20000000–0x20004FEF`；vector 和所有 ISR symbol 均位于 RAM；`.usb_dma` 位于 stack 之前；
-DFU magic 范围未被触碰；且不存在 Flash-programming symbol。
+`0x20000000–0x20004FFF`；vector 和所有 ISR symbol 均位于 RAM；`.usb_dma` 位于 stack 之前；
+且不存在 Flash-programming symbol。

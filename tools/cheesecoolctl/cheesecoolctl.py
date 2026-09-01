@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """Small macOS/Linux hidapi client for CheeseCool V1."""
 import argparse
-import subprocess
 import sys
-import time
 
 VID = 0x1A86
 PID = 0xFE01
@@ -90,18 +88,9 @@ def make_curve_payload(arguments):
         previous_temperature = temperature
     return payload
 
-def wait_for_dfu(timeout_seconds=8):
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        result = subprocess.run(["dfu-util", "-l"], capture_output=True, text=True, timeout=2)
-        if "1a86:8035" in result.stdout.lower():
-            return True
-        time.sleep(0.2)
-    return False
-
 def main():
     parser = argparse.ArgumentParser(prog="cheesecoolctl")
-    parser.add_argument("command", choices=("ping", "info", "status", "mode", "duty", "curve", "dfu", "enter-dfu"))
+    parser.add_argument("command", choices=("ping", "info", "status", "mode", "duty", "curve", "reserved-test"))
     parser.add_argument("argument", nargs="*")
     args = parser.parse_args()
     if args.command == "mode":
@@ -125,15 +114,12 @@ def main():
         for index in range(accepted[0]):
             print("%d C -> %d %%" % (accepted[1 + 2 * index], accepted[2 + 2 * index]))
         return 0
-    if args.command == "dfu":
-        response = transact(13)
-        if response[4] != 0:
-            raise RuntimeError("ENTER_DFU failed with status %d" % response[4])
-        print("Entering DFU...")
-        print("Application disconnected.")
-        if not wait_for_dfu():
-            raise RuntimeError("ENTER_DFU accepted but DFU device was not detected")
-        print("DFU device detected: 1A86:8035")
+    if args.command == "reserved-test":
+        for command in (8, 13):
+            response = transact(command)
+            if response[4] != 2:
+                raise RuntimeError("reserved command 0x%02X returned status %d, expected BAD_COMMAND (2)" % (command, response[4]))
+        print("Reserved commands 0x08 and 0x0D returned BAD_COMMAND")
         return 0
     if args.command == "duty":
         try:
@@ -147,14 +133,12 @@ def main():
             raise RuntimeError("SET_DUTY failed with status %d" % response[4])
         print("Duty set to %d %%" % duty)
         return 0
-    response = transact({"ping": 1, "info": 2, "status": 9, "enter-dfu": 8}[args.command])
+    response = transact({"ping": 1, "info": 2, "status": 9}[args.command])
     if args.command == "status":
         print_status(response)
         return 0
     print("response: status=%d sequence=%d payload=%s" %
           (response[4], response[2], response[4:4 + response[3]].hex()))
-    if args.command == "enter-dfu":
-        print("DFU request accepted; waiting for USB DFU enumeration")
     return 0
 
 if __name__ == "__main__":

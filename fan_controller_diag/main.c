@@ -1,7 +1,6 @@
 #include "ch32x035.h"
 #include "debug.h"
 #include "fan_controller.h"
-#include "system_dfu.h"
 
 /* fan_controller.c exposes this getter even though TACH is not part of this
  * isolated diagnostic. Keep the diagnostic independent of fan_tach.c. */
@@ -35,5 +34,5 @@ int main(void)
     run_duty_cycle();
     run_duty_cycle();
 
-    system_request_dfu();
+    while (1) { }
 }

@@ -3,7 +3,6 @@
 #include <ch32x035.h>
 
 #include "fan_controller.h"
-#include "system_dfu.h"
 #include "system_status.h"
 
 /* fan_controller.c exposes this dependency even though this diagnostic does
@@ -37,7 +36,7 @@ int main(void)
             fan_controller_set_duty(100U);
             stage = 3U;
         } else if (stage == 3U && elapsed_ms >= 8000UL) {
-            system_request_dfu();
+            stage = 4U;
         }
     }
 }

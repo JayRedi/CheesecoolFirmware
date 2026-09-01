@@ -5,9 +5,7 @@
 #include "failsafe.h"
 #include "system_status.h"
 #include "power_monitor.h"
-#include "system_dfu.h"
 #include "usb_device.h"
-static volatile bool dfu_pending;
 static uint8_t checksum(const uint8_t *d) { uint8_t c=0; for(uint8_t i=0;i<USB_REPORT_SIZE-1U;i++) c^=d[i]; return c; }
 static void put32(uint8_t *p,uint32_t v) { p[0]=(uint8_t)v; p[1]=(uint8_t)(v>>8); p[2]=(uint8_t)(v>>16); p[3]=(uint8_t)(v>>24); }
 static void put_status(uint8_t *payload) {
@@ -55,10 +53,6 @@ static void set_curve_command(const uint8_t *request, uint8_t *response) {
     response[5]=count;
     for(uint8_t i=0U;i<count;i++) { response[6U+2U*i]=candidate[i].temperature_c; response[7U+2U*i]=candidate[i].duty_percent; }
 }
-static void enter_dfu_command(const uint8_t *request, uint8_t *response) {
-    if(request[3]!=0U) response[4]=USB_STATUS_BAD_PARAMETER;
-    else { dfu_pending=true; }
-}
 static bool command_is_known(usb_command_t command)
 {
     switch (command) {
@@ -69,19 +63,17 @@ static bool command_is_known(usb_command_t command)
     case CMD_FAN_ENABLE:
     case CMD_FAN_DISABLE:
     case CMD_KEEPALIVE:
-    case CMD_ENTER_DFU_LEGACY:
     case CMD_GET_STATUS:
     case CMD_SET_MODE:
     case CMD_SET_DUTY:
     case CMD_SET_CURVE:
-    case CMD_ENTER_DFU:
         return true;
     default:
         return false;
     }
 }
 static void base(const uint8_t *r,uint8_t *s,uint8_t st) { for(uint8_t i=0;i<USB_REPORT_SIZE;i++) s[i]=0; s[0]=PROTOCOL_VERSION; s[1]=r[1]; s[2]=r[2]; s[3]=1; s[4]=st; }
-void usb_protocol_init(void) { dfu_pending=false; }
+void usb_protocol_init(void) { }
 void usb_protocol_process(const uint8_t request[USB_REPORT_SIZE],uint8_t response[USB_REPORT_SIZE]) {
     base(request,response,USB_STATUS_OK);
     if(request[0]!=PROTOCOL_VERSION || request[3]>(USB_REPORT_SIZE-5U) || request[USB_REPORT_SIZE-1U]!=checksum(request)) { base(request,response,USB_STATUS_BAD_PACKET); response[USB_REPORT_SIZE-1U]=checksum(response); return; }
@@ -102,11 +94,12 @@ void usb_protocol_process(const uint8_t request[USB_REPORT_SIZE],uint8_t respons
     case CMD_FAN_ENABLE: fan_controller_enable(); break;
     case CMD_FAN_DISABLE: fan_controller_disable(); break;
     case CMD_KEEPALIVE: break;
-    case CMD_ENTER_DFU_LEGACY:
-    case CMD_ENTER_DFU: enter_dfu_command(request,response); break;
+    case CMD_RESERVED_08:
+    case CMD_RESERVED_0D:
+        response[4]=USB_STATUS_BAD_COMMAND;
+        break;
     default: response[4]=USB_STATUS_BAD_COMMAND; break;
     }
     if (known) failsafe_host_activity();
     response[USB_REPORT_SIZE-1U]=checksum(response);
 }
-bool usb_protocol_dfu_pending(void) { return dfu_pending; }

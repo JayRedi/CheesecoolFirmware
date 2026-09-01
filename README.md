@@ -1,17 +1,35 @@
-# CheeseCool 固件 V1
+# CheeseCool Firmware
 
-面向 CheeseCool V1 硬件的 CH32X035F8U6 裸机风扇控制器。
+CheeseCool Firmware 是运行在 CheeseCool V1 风扇控制板上的裸机固件。它把 macOS/Linux 主机的 USB HID 请求转换为标准 4 针 PWM 风扇控制，并把转速与安全状态返回给主机。
 
-使用 `pio run` 构建。Application 环境使用自定义 HID-to-DFU 上传器；其 raw binary 链接地址为 `0x2000`，不得烧录到地址零。首次安装时，通过 ROM ISP 执行一次 `wchisp flash .pio/build/ch32x035f8u6_evt_r0/cheesecool-factory.bin`。详见 [docs/FIRMWARE_UPDATE.md](docs/FIRMWARE_UPDATE.md)。
+## 冻结的 V1 基线
 
-PA0 通过 TIM2 通道 1 和反相 2N7002K 级驱动 25 kHz 风扇 PWM。API 隐藏了反相关系：`fan_pwm_set_duty(0)` 表示风扇 0%，`fan_pwm_set_duty(100)` 表示风扇 100%。PA1 是转速输入，由 EXTI 测量，每转两脉冲。由于 MCU 引脚尚未确认，`PWR_FAULT` 被刻意禁用；获得原理图映射后更新 `board_config.h`。
+- MCU：CH32X035F8U6。
+- USB：Full-Speed HID，开发用 VID:PID `1A86:FE01`，产品字符串为 `CheeseCool USB HID`。
+- 风扇控制：PA0 / TIM2_CH1，25 kHz PWM；外部 Q401 开漏级使物理电平反相，固件 API 已处理该反相。
+- 转速：PA1 接收 TACH，按默认每转 2 脉冲计算 RPM。
+- 模式：`HOST_CONTROLLED` 与 `MAX`。
+- 安全：主机建立有效 Protocol V1 活动后约 30 秒无有效活动，MCU 会进入 50% duty failsafe。`GET_STATUS` 等有效 V1 命令会刷新活动计时。
+- 协议：64 字节、XOR checksum 的 Protocol V1。`0x08` 和 `0x0D` 永久为 `RESERVED`，返回 `BAD_COMMAND`，不得重新分配。
+- Bootloader：保留 8 KiB Bootloader 与无有效 Application 时的 DFU 防砖回退；Application 的 software-triggered DFU 与 SRAM magic handoff 均已删除。
 
-硬件验证已确认 PA0 直接 GPIO 控制，以及 TIM2_CH1 到 PA0 的 PWM 控制。此前 TIM1_CH1/PA0 配对失败，因为 CH32X035F8U6 不存在该复用功能路径。已确认转速从 0% 到 100% 的可见变化趋势；精确的 25 kHz 频率和占空比仍需示波器验证。
+冻结标签为 `software-dfu-removed-v1`：
 
-复位时，栅极下拉会短暂提供全速；随后 Application 设置 0% 占空比并进入 `BOOT_WAIT`。第一次使用已知命令 ID 的有效请求会建立 Host activity；连续五分钟没有该请求时进入仅 RAM 配置的默认 50% fail-safe；已经建立 Host 连接后，连续 30 秒没有有效 activity 也会进入 fail-safe。旧版 `CMD_ENTER_BOOTLOADER` 别名请求 CheeseCool DFU hand-off；正常 Application 流程不使用未经验证的 WCH ROM ISP 路径。
+| 镜像 | SHA-256 |
+|---|---|
+| Application | `3f920fc169dc59fea000ff06525a528b7bfaf5c76e57374ede7e4cb34caa0efb` |
+| Bootloader deployment（8 KiB） | `a5bb37828e0a57d9f17f49681acd661f715dbe0d99efc7818134d70cccbcee44` |
 
-Application 现在以开发专用 WCH VID:PID `1a86:fe01` 提供 64 字节 USB Full-Speed HID 设备。协议见 [docs/USB_PROTOCOL.md](docs/USB_PROTOCOL.md)，传输细节见 [docs/USB_DEVICE.md](docs/USB_DEVICE.md)。`CMD_ENTER_DFU`（兼容命令 ID 8）请求独立的 CheeseCool DFU Bootloader，而不是 WCH ROM ISP。更新流程见 [docs/FIRMWARE_UPDATE.md](docs/FIRMWARE_UPDATE.md)。
+## 快速入口
 
-## 目录结构
+- 构建、测试、WCH-LinkE 调试与只读 target 检查：[docs/BUILD.md](docs/BUILD.md)
+- 功能和硬件接口：[docs/FUNCTIONS.md](docs/FUNCTIONS.md)
+- 系统与内存架构：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- 冻结的 Protocol V1：[docs/USB_PROTOCOL.md](docs/USB_PROTOCOL.md)
+- Bootloader 使用边界：[docs/BOOTLOADER.md](docs/BOOTLOADER.md)
 
-`include/` 存放配置和模块 API；`src/` 存放实现；`docs/` 存放架构、协议和硬件验证资料。
+正常开发/恢复优先使用 WCH-LinkE；`wchisp` 可用于已验证的 USB ISP 场景。Application 不会通过 HID 请求 DFU，也不要把已运行的 HID Application 当作 DFU 设备。
+
+## 许可证与第三方代码
+
+CheeseCool 原创代码采用 [MIT License](LICENSE)。仓库还包含或构建时使用第三方组件；其原始版权和许可证不被 MIT 覆盖，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。中文说明仅供参考，法律正文以英文 `LICENSE` 为准。
