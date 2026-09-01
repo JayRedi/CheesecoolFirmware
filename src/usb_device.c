@@ -1180,7 +1180,12 @@ void USBFS_IRQHandler(void)
             usb_trace_log(USB_TRACE_TRANSFER_BEFORE_HANDLE);
         }
 #endif
-        if (token==USBFS_UIS_TOKEN_SETUP && ep==0) {
+        /* On CH32X035, a completed SETUP is unambiguously delivered into
+         * UEP0 DMA. Mac enumeration captures show SETUP_ACT + SETUP while
+         * the INT_ST endpoint nibble is non-zero (for example 0xB4), even
+         * though ep0_buf contains SET_ADDRESS. Do not discard that valid
+         * EP0 control transaction based on the unreliable endpoint nibble. */
+        if ((status&USBFS_SETUP_ACT) && token==USBFS_UIS_TOKEN_SETUP) {
 #if FEATURE_USB_SETUP_DIAG
             usb_setup_seen=true;
 #endif
