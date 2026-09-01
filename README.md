@@ -19,6 +19,7 @@ CheeseCool Firmware 是运行在 CheeseCool V1 风扇控制板上的裸机固件
 |---|---|
 | Application | `3f920fc169dc59fea000ff06525a528b7bfaf5c76e57374ede7e4cb34caa0efb` |
 | Bootloader deployment（8 KiB） | `a5bb37828e0a57d9f17f49681acd661f715dbe0d99efc7818134d70cccbcee44` |
+| Factory image（62 KiB） | `36c932f34ace2771fdf9bce5cf040aa0f5a57bea9ec93e61c85fdb4da383f127` |
 
 ## 快速入口
 
@@ -28,21 +29,45 @@ CheeseCool Firmware 是运行在 CheeseCool V1 风扇控制板上的裸机固件
 - 冻结的 Protocol V1：[docs/USB_PROTOCOL.md](docs/USB_PROTOCOL.md)
 - Bootloader 使用边界：[docs/BOOTLOADER.md](docs/BOOTLOADER.md)
 
-正常开发/恢复优先使用 WCH-LinkE；`wchisp` 可用于已验证的 USB ISP 场景。Application 不会通过 HID 请求 DFU，也不要把已运行的 HID Application 当作 DFU 设备。
+正常开发/恢复优先使用 WCH-LinkE；空芯片若能被 `wchisp info` 识别为 WCH ROM ISP，也可以直接通过主 USB-C 首次烧录。Application 不会通过 HID 请求 DFU，也不要把已运行的 HID Application 当作 DFU 设备。
 
 ## 空芯片新 PCB：首次烧录
 
-空的 CH32X035F8U6 没有 USB 设备枚举，也没有可执行的 HID/DFU 上传器。首次烧录需要 WCH-LinkE（或兼容的 SDI 调试器）和目标板供电：
+空的 CH32X035F8U6 不会枚举 CheeseCool HID/DFU，但可以在硬件 BOOT 模式下通过主 USB-C 进入芯片内部的 WCH ROM ISP。若 `wchisp info` 能看到 `CH32X035F8U6`（历史验证记录为 Bootloader 02.60），可以不接 WCH-LinkE 直接完成首次烧录。
 
-1. 断开主 USB-C 数据线，连接 WCH-LinkE 的 `DBG_DIO`、`DBG_DCK`、GND，并确认目标板有稳定 3.3 V 供电。不要让两个独立电源同时驱动同一块板。
-2. 检查探针和芯片：
+### 方式 A：USB-C + WCH ROM ISP（优先）
+
+1. 按 PCB 上已有的 BOOT 按键/跳线进入 WCH ROM ISP，使用主 USB-C 给目标板供电和通信；不要同时接另一只 3.3 V 电源。
+2. 确认 ROM ISP 已枚举：
+
+   ```sh
+   wchisp info
+   ```
+
+   如果提示找不到 `4348:55e0` 或 `1a86:55e0`，说明当前没有进入 ROM ISP；断电后重新设置 BOOT，再检查 USB-C 数据线，仍不行时改用方式 B。
+
+3. 下载 [Release v1.0.0](https://github.com/JayRedi/Cheesecool_Firmware/releases/tag/v1.0.0) 的 `cheesecool-factory-v1.0.0.bin`，执行一次完整烧录：
+
+   ```sh
+   wchisp flash cheesecool-factory-v1.0.0.bin
+   ```
+
+   该合并镜像大小为 62 KiB，Bootloader 位于 `0x08000000`，Application 位于 `0x08002000`；`wchisp flash` 会擦除用户 Flash 并在写入后复位。此命令只适用于空板或明确授权的完整重刷，不要用于需要保留现有镜像的设备。
+
+4. 退出 BOOT 模式并重新插拔主 USB-C。等待约 2–3 秒后，主机应看到 `1A86:FE01`（产品字符串 `CheeseCool USB HID`）。此时 `wchisp info` 不再找到 ROM ISP 是正常现象。
+
+### 方式 B：WCH-LinkE / SDI 后备流程
+
+如果方式 A 无法枚举 ROM ISP，断开主 USB-C 数据线，连接 WCH-LinkE 的 `DBG_DIO`、`DBG_DCK`、GND，并确认目标板有稳定 3.3 V 供电。不要让两个独立电源同时驱动同一块板。
+
+1. 检查探针和芯片：
 
    ```sh
    wlink list
    wlink --chip CH32X035 status
    ```
 
-3. 下载 [Release v1.0.0](https://github.com/JayRedi/Cheesecool_Firmware/releases/tag/v1.0.0) 的两个资产。先擦除并写入 8 KiB Bootloader，再在不擦除的情况下写入 Application：
+2. 下载 [Release v1.0.0](https://github.com/JayRedi/Cheesecool_Firmware/releases/tag/v1.0.0) 的两个独立资产。先擦除并写入 8 KiB Bootloader，再在不擦除的情况下写入 Application：
 
    ```sh
    wlink --chip CH32X035 flash --erase --address 0x08000000 \
@@ -53,7 +78,7 @@ CheeseCool Firmware 是运行在 CheeseCool V1 风扇控制板上的裸机固件
 
    Bootloader 必须位于 `0x08000000..0x08001FFF`，Application 必须位于 `0x08002000` 起始的区域。不能使用 `wchisp flash application.bin` 把 raw Application 当作地址零镜像。
 
-4. 可选地只读回读两个区域并校验：
+3. 可选地只读回读两个区域并校验：
 
    ```sh
    wlink --chip CH32X035 dump 0x08000000 0x2000 --out bootloader-readback.bin
@@ -63,7 +88,7 @@ CheeseCool Firmware 是运行在 CheeseCool V1 风扇控制板上的裸机固件
 
    预期 SHA-256 分别为 `a5bb37828e0a57d9f17f49681acd661f715dbe0d99efc7818134d70cccbcee44` 和 `3f920fc169dc59fea000ff06525a528b7bfaf5c76e57374ede7e4cb34caa0efb`。回读文件只保存在本机，不要提交到 Git。
 
-5. 让目标运行并重新连接主 USB-C：
+4. 让目标运行并重新连接主 USB-C：
 
    ```sh
    wlink --chip CH32X035 reset run
